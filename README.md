@@ -10,3 +10,13 @@ Deploy once (Render, via `render.yaml`, with `MONGO_URI` set). After that the ex
 - `https://<your-render-url>/api/status` — health check: confirms DB connection and shows how many participants have been saved.
 
 To keep participant data private, set an `EXPORT_KEY` environment variable on the server; the export endpoints then require `?key=<EXPORT_KEY>` on the URL (e.g. `/api/export/xlsx?key=mysecret`). If `EXPORT_KEY` is unset, exports are open.
+
+## Keeping the server awake (free tier)
+
+Render's free tier spins the service down after ~15 minutes without traffic, making the next request slow (~30–60 s cold start). The `.github/workflows/keep-alive.yml` workflow pings `/api/status` every 10 minutes to prevent that, and its run history doubles as uptime monitoring — a red run means the server or database was unreachable.
+
+One-time setup after deploying:
+1. In the GitHub repo: **Settings → Secrets and variables → Actions → Variables** → add `RENDER_URL` = your deployed URL (e.g. `https://adhd-cognitive-games.onrender.com`).
+2. Scheduled workflows only run on the repository's **default branch**, so make sure this file is on it.
+
+Note: GitHub disables cron workflows after 60 days without repository activity — any commit re-enables them. Keeping one service awake 24/7 fits within Render's free 750 instance-hours/month.

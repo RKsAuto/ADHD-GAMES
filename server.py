@@ -1,9 +1,11 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
 from pymongo import MongoClient
 from pymongo.errors import ServerSelectionTimeoutError
 import os
+from io import BytesIO
 from datetime import datetime, timezone
+from openpyxl import Workbook
 
 # ── App setup ─────────────────────────────────────────────────────
 app = Flask(__name__)
@@ -261,18 +263,95 @@ def api_status():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+def check_export_key():
+    """
+    Optional access control for the export endpoints. If the EXPORT_KEY env
+    var is set, requests must include ?key=<EXPORT_KEY>. If it is not set,
+    exports stay open (backwards compatible).
+    """
+    expected = os.environ.get('EXPORT_KEY', '')
+    if expected and request.args.get('key') != expected:
+        return jsonify({'error': 'Invalid or missing key. Append ?key=<EXPORT_KEY> to the URL.'}), 401
+    return None
+
+
 @app.route('/api/export', methods=['GET'])
 def export_json():
     """
     Download all records as JSON (useful for piping into pandas / sklearn).
     Visit: https://<your-render-url>/api/export
     """
+    denied = check_export_key()
+    if denied:
+        return denied
     col = get_collection()
     if col is None:
         return jsonify({'error': 'No database connection'}), 503
     try:
         docs = list(col.find({}, {'_id': 0}))   # exclude MongoDB internal _id
         return jsonify(docs), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+def flatten_doc(doc, prefix=''):
+    """Flatten nested dicts into dot-notation columns; lists (raw trial
+    arrays) are skipped — they stay available via /api/export JSON."""
+    flat = {}
+    for k, v in doc.items():
+        key = f'{prefix}{k}'
+        if isinstance(v, dict):
+            flat.update(flatten_doc(v, key + '.'))
+        elif isinstance(v, list):
+            continue
+        else:
+            flat[key] = v
+    return flat
+
+
+@app.route('/api/export/xlsx', methods=['GET'])
+def export_xlsx():
+    """
+    Download all records as a ready-to-use Excel sheet: one row per
+    participant, one column per metric. Always reflects the live database —
+    no redeploy needed between exports.
+    Visit: https://<your-render-url>/api/export/xlsx
+    """
+    denied = check_export_key()
+    if denied:
+        return denied
+    col = get_collection()
+    if col is None:
+        return jsonify({'error': 'No database connection'}), 503
+    try:
+        # rawResults holds large nested trial arrays — excluded from the
+        # sheet; fetch them via /api/export if needed
+        docs = list(col.find({}, {'_id': 0, 'rawResults': 0}))
+        rows = [flatten_doc(d) for d in docs]
+
+        headers = []
+        for r in rows:
+            for k in r:
+                if k not in headers:
+                    headers.append(k)
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'participants'
+        ws.append(headers)
+        for r in rows:
+            ws.append([r.get(h) for h in headers])
+
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        fname = f"adhd_data_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.xlsx"
+        return send_file(
+            buf,
+            as_attachment=True,
+            download_name=fname,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

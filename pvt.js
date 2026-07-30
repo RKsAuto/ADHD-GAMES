@@ -5,7 +5,8 @@ let startTime;
 let reactionTimes = [];
 let falseStarts   = 0;
 let lapses        = 0;
-let testDuration  = 30;
+let testDuration  = 200;   // 3 rounds × 200 s = 10-minute PVT (standard protocol length)
+let practiceDuration = 30; // practice stays short
 let timeLeft      = testDuration;
 let timerInterval;
 let isTestRunning    = false;
@@ -56,7 +57,7 @@ function startPracticeRound() {
     document.getElementById('welcomeScreen').style.display = 'none';
     document.getElementById('practiceScreen').style.display = 'block';
     resetBlockCounters();
-    timeLeft = testDuration; isTestRunning = true;
+    timeLeft = practiceDuration; isTestRunning = true;
     startTimer('practiceTimeLeft');
     showNextStimulus(true);
 }
@@ -77,6 +78,7 @@ function startTestRound(round) {
 function resetBlockCounters() { reactionTimes = []; falseStarts = 0; lapses = 0; }
 
 function showNextStimulus(showFeedback) {
+    if (!isTestRunning) return;
     clearTimeout(stimulusTimeout); clearTimeout(fixationTimeout);
     const stimulusDisplay = isPracticeRound ? document.getElementById('practiceStimulus') : document.getElementById('stimulusDisplay');
     stimulusDisplay.textContent = '+'; stimulusDisplay.style.color = '#000';
@@ -92,7 +94,8 @@ function showNextStimulus(showFeedback) {
             if (isStimulusOn) lapses++;
             stimulusDisplay.textContent = '+'; stimulusDisplay.style.color = '#000';
             isStimulusOn = false; clearInterval(counterInterval);
-            if (isTestRunning) setTimeout(() => showNextStimulus(showFeedback), Math.random() * 8000 + 2000);
+            // showNextStimulus applies its own 2–10 s fixation delay — no extra delay here
+            showNextStimulus(showFeedback);
         }, 1000);
     }, Math.random() * 8000 + 2000);
 }
@@ -116,19 +119,24 @@ function handleKeyPress(e) {
         stimulusDisplay.textContent = '+'; stimulusDisplay.style.color = '#000';
         isStimulusOn = false;
         clearTimeout(stimulusTimeout);
-        setTimeout(() => showNextStimulus(isPracticeRound), Math.random() * 8000 + 2000);
+        // showNextStimulus applies its own 2–10 s fixation delay — no extra delay here
+        showNextStimulus(isPracticeRound);
     } else {
         falseStarts++;
         if (isPracticeRound) { messageElement.textContent = 'False start! No stimulus.'; messageElement.style.color = '#e74c3c'; }
     }
 }
 
+function formatTime(s) {
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
 function startTimer(timeElementId) {
     clearInterval(timerInterval);
-    document.getElementById(timeElementId).textContent = timeLeft;
+    document.getElementById(timeElementId).textContent = formatTime(timeLeft);
     timerInterval = setInterval(() => {
         timeLeft--;
-        document.getElementById(timeElementId).textContent = timeLeft;
+        document.getElementById(timeElementId).textContent = formatTime(timeLeft);
         if (timeLeft <= 0) {
             clearInterval(timerInterval); clearTimeout(stimulusTimeout); clearTimeout(fixationTimeout);
             endRound();
@@ -183,7 +191,7 @@ function showFinalResults() {
         { label:'RT Variability',  value: overallRTV      ||'–', unit:'ms SD',  badge: overallRTV      ? getBadge(overallRTV,80,140)   : 'ok' },
         { label:'Lapses',          value: totalLapses,            unit:'RT > 500 ms', badge: getBadge(totalLapses,2,6) },
         { label:'False Starts',    value: totalFS,                unit:'anticipatory', badge: getBadge(totalFS,2,6) },
-        { label:'Valid Trials',    value: totalValid,             unit:'responses', badge: totalValid >= 20 ? 'good' : totalValid >= 10 ? 'ok' : 'concern' },
+        { label:'Valid Trials',    value: totalValid,             unit:'responses', badge: totalValid >= 60 ? 'good' : totalValid >= 30 ? 'ok' : 'concern' },
     ];
     document.getElementById('metricsCards').innerHTML = cards.map(c=>`
         <div class="metric-card">

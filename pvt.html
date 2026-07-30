@@ -17,6 +17,7 @@
         <div class="instructions">
             <p>Watch the box. When <span class="red-text">red numbers</span> appear, press <strong>Spacebar</strong> as fast as you can.</p>
             <p>Numbers appear at random intervals — stay focused throughout.</p>
+            <p>The test has <strong>3 rounds of 3 min 20 s</strong> each (10 minutes total), with a short practice first.</p>
             <p>False starts (response &lt; 100 ms) are excluded from scoring.</p>
         </div>
         <button id="startButton">Begin Practice</button>
@@ -28,7 +29,7 @@
     <div id="practiceScreen" style="display:none;">
         <div class="round-header">
             <div class="round-badge">Practice Round</div>
-            <div class="timer-badge">⏱ <span id="practiceTimeLeft">30</span>s</div>
+            <div class="timer-badge">⏱ <span id="practiceTimeLeft">0:30</span></div>
         </div>
         <div id="practiceStimulus" class="stimulus-display">+</div>
         <p id="practiceMessage" class="feedback-msg"></p>
@@ -41,7 +42,7 @@
     <div id="testScreen" style="display:none;">
         <div class="round-header">
             <div class="round-badge">Round <span id="currentRound">1</span></div>
-            <div class="timer-badge">⏱ <span id="timeLeft">30</span>s</div>
+            <div class="timer-badge">⏱ <span id="timeLeft">3:20</span></div>
         </div>
         <div id="stimulusDisplay" class="stimulus-display">+</div>
         <p id="message" class="feedback-msg"></p>

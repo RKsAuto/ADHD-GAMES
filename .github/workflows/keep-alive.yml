@@ -19,12 +19,9 @@ jobs:
     steps:
       - name: Ping /api/status
         env:
-          RENDER_URL: ${{ vars.RENDER_URL }}
+          # Deployed URL; a RENDER_URL repository variable overrides it if set
+          RENDER_URL: ${{ vars.RENDER_URL || 'https://adhd-games.onrender.com' }}
         run: |
-          if [ -z "$RENDER_URL" ]; then
-            echo "::warning::RENDER_URL repository variable is not set — skipping ping. Add it under Settings -> Secrets and variables -> Actions -> Variables."
-            exit 0
-          fi
           # --max-time 90 tolerates a cold start; --retry covers transient blips
           curl -fsS --max-time 90 --retry 3 --retry-delay 10 "$RENDER_URL/api/status"
           echo

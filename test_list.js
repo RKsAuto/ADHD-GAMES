@@ -46,6 +46,25 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('registrationSection').style.display = 'block';
     });
 
+    // Guest mode: skip registration and go straight to the picker.
+    // Guest rows are named "Guest" so they are easy to filter out of exports.
+    document.getElementById('guestBtn').addEventListener('click', () => {
+        const guest = {
+            id: 'guest-' + Date.now().toString(),
+            name: 'Guest', email: '', age: null, sex: '',
+            adhdStatus: '', consent: false,
+            stateAssessment: { sleepiness: null, feeling: null, mood: null, timestamp: new Date().toISOString() },
+            results: { goNoGo: null, pvt: null, trailMaking: null, dualNBack: null },
+            testStartTime: new Date().toISOString(),
+            completedTests: []
+        };
+        const allUsers = JSON.parse(localStorage.getItem('users')) || [];
+        allUsers.push(guest);
+        localStorage.setItem('users', JSON.stringify(allUsers));
+        sessionStorage.setItem('currentUser', JSON.stringify(guest));
+        showTestPicker();
+    });
+
     if (sessionStorage.getItem('currentUser')) {
         showTestPicker();
         return;

@@ -1,6 +1,25 @@
 # ADHD-Cognitive-Games
 I have developed some cognitive games based on research papers that measure different behavioural traits related to ADHD. The games are developed to collect data for training a classification model for characterising the ADHD traits in young adults.
 
+## Run locally
+
+No database or configuration needed — data is stored in a local file automatically.
+
+```bash
+python3 -m venv venv
+venv/bin/pip install -r requirements.txt        # Windows: venv\Scripts\pip install -r requirements.txt
+venv/bin/python server.py                       # Windows: venv\Scripts\python server.py
+```
+
+Then open **http://localhost:5000/test_list.html** in Chrome/Edge:
+
+1. Register a participant — or click **"Just demoing? Continue as guest →"**.
+2. You land on the **Choose a Test** page: pick any game (e.g. the PVT — 3 rounds, 10 minutes).
+3. Play it; when it ends, the results screen appears and your data is saved automatically.
+4. Click **⬇ Download Excel (all data)** on the results screen to get the spreadsheet.
+
+Games need a physical keyboard (Space / F / J). Every game has Skip buttons if you want to move fast. Guest runs are saved under the name "Guest" so they're easy to filter out of real data.
+
 ## Getting the data
 
 **Storage is automatic — one-time configuration, no redeploys:**

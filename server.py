@@ -3,6 +3,7 @@ from flask_cors import CORS
 from pymongo import MongoClient
 from pymongo.errors import ServerSelectionTimeoutError
 import os
+import json
 from io import BytesIO
 from datetime import datetime, timezone
 from openpyxl import Workbook
@@ -14,6 +15,58 @@ CORS(app)
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 MONGO_URI = os.environ.get('MONGO_URI', '')
 
+# When MONGO_URI is not set (local runs / demos), participants are stored in
+# this JSON file instead. Do NOT rely on it in cloud deployments — hosts like
+# Render wipe the local disk on every restart/redeploy.
+LOCAL_DATA_FILE = os.path.join(BASE_DIR, 'local_data.json')
+
+
+def load_local_docs():
+    if not os.path.exists(LOCAL_DATA_FILE):
+        return []
+    try:
+        with open(LOCAL_DATA_FILE, encoding='utf-8') as f:
+            docs = json.load(f)
+            return docs if isinstance(docs, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def store_document(document):
+    """
+    Upsert one participant record (keyed by userId) into MongoDB when
+    MONGO_URI is configured, otherwise into the local JSON file.
+    Returns the storage name, or None if MongoDB is configured but down.
+    """
+    if MONGO_URI:
+        col = get_collection()
+        if col is None:
+            return None
+        col.replace_one({'userId': document['userId']}, document, upsert=True)
+        return 'MongoDB'
+    docs = [d for d in load_local_docs() if d.get('userId') != document['userId']]
+    docs.append(document)
+    with open(LOCAL_DATA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(docs, f, indent=1)
+    return 'local file'
+
+
+def fetch_documents(include_raw=True):
+    """
+    All participant records from whichever storage is active.
+    Returns None if MongoDB is configured but unreachable.
+    """
+    if MONGO_URI:
+        col = get_collection()
+        if col is None:
+            return None
+        proj = {'_id': 0} if include_raw else {'_id': 0, 'rawResults': 0}
+        return list(col.find({}, proj))
+    docs = load_local_docs()
+    if not include_raw:
+        docs = [{k: v for k, v in d.items() if k != 'rawResults'} for d in docs]
+    return docs
+
 # ── DB connection (lazy, cached) ──────────────────────────────────
 _collection = None
 
@@ -22,7 +75,7 @@ def get_collection():
     if _collection is not None:
         return _collection
     if not MONGO_URI:
-        print('[DB] MONGO_URI not set — data will not be persisted.')
+        print(f'[DB] MONGO_URI not set — storing data in {LOCAL_DATA_FILE}')
         return None
     try:
         client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
@@ -232,16 +285,18 @@ def save_data():
             },
         }
 
-        col = get_collection()
-        if col is None:
+        if not document['userId']:
+            document['userId'] = f'anon-{datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")}'
+
+        storage = store_document(document)
+        if storage is None:
             return jsonify({
                 'status':  'error',
-                'message': 'Database not configured. Set the MONGO_URI environment variable.'
+                'message': 'MONGO_URI is set but the database is unreachable.'
             }), 503
 
-        result = col.insert_one(document)
-        print(f'  → Saved to MongoDB: {result.inserted_id}')
-        return jsonify({'status': 'success', 'message': 'Data saved.', 'id': str(result.inserted_id)}), 200
+        print(f"  → Saved to {storage}: {document['userId']}")
+        return jsonify({'status': 'success', 'message': f'Data saved ({storage}).', 'id': document['userId']}), 200
 
     except Exception as e:
         import traceback
@@ -252,15 +307,18 @@ def save_data():
 # ── Diagnostic endpoints ──────────────────────────────────────────
 @app.route('/api/status', methods=['GET'])
 def api_status():
-    """Quick health check — visit in browser to confirm DB is connected."""
-    col = get_collection()
-    if col is None:
-        return jsonify({'status': 'db_disconnected', 'hint': 'Set MONGO_URI env var'}), 503
-    try:
-        count = col.count_documents({})
-        return jsonify({'status': 'ok', 'participants_saved': count}), 200
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+    """Quick health check — visit in browser to confirm storage is working."""
+    if MONGO_URI:
+        col = get_collection()
+        if col is None:
+            return jsonify({'status': 'db_disconnected', 'hint': 'MONGO_URI is set but the database is unreachable'}), 503
+        try:
+            count = col.count_documents({})
+            return jsonify({'status': 'ok', 'storage': 'MongoDB', 'participants_saved': count}), 200
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+    return jsonify({'status': 'ok', 'storage': 'local file (MONGO_URI not set)',
+                    'participants_saved': len(load_local_docs())}), 200
 
 
 def check_export_key():
@@ -284,11 +342,10 @@ def export_json():
     denied = check_export_key()
     if denied:
         return denied
-    col = get_collection()
-    if col is None:
-        return jsonify({'error': 'No database connection'}), 503
     try:
-        docs = list(col.find({}, {'_id': 0}))   # exclude MongoDB internal _id
+        docs = fetch_documents(include_raw=True)
+        if docs is None:
+            return jsonify({'error': 'MONGO_URI is set but the database is unreachable'}), 503
         return jsonify(docs), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -320,13 +377,12 @@ def export_xlsx():
     denied = check_export_key()
     if denied:
         return denied
-    col = get_collection()
-    if col is None:
-        return jsonify({'error': 'No database connection'}), 503
     try:
         # rawResults holds large nested trial arrays — excluded from the
         # sheet; fetch them via /api/export if needed
-        docs = list(col.find({}, {'_id': 0, 'rawResults': 0}))
+        docs = fetch_documents(include_raw=False)
+        if docs is None:
+            return jsonify({'error': 'MONGO_URI is set but the database is unreachable'}), 503
         rows = [flatten_doc(d) for d in docs]
 
         headers = []
@@ -358,8 +414,9 @@ def export_xlsx():
 
 # ── Entry point ───────────────────────────────────────────────────
 if __name__ == '__main__':
-    print('X-PhenoADHD backend — MongoDB edition')
-    print(f"MONGO_URI set: {'yes' if MONGO_URI else 'NO — data will not be saved'}")
-    print('Connecting to DB...')
-    get_collection()
+    print('X-PhenoADHD backend')
+    print(f"MONGO_URI set: {'yes — using MongoDB' if MONGO_URI else 'no — using local file storage (local_data.json)'}")
+    if MONGO_URI:
+        print('Connecting to DB...')
+        get_collection()
     app.run(host='0.0.0.0', port=5000, debug=True)

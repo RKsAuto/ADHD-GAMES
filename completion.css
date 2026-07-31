@@ -131,6 +131,17 @@ body {
 }
 .btn-action-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(99,102,241,0.46); }
 
+.btn-download-data {
+    padding: 14px 36px;
+    background: #fff; color: #15803d;
+    border: 2px solid #15803d; border-radius: 30px;
+    font-size: 14px; font-weight: 700; cursor: pointer;
+    text-decoration: none; display: inline-block;
+    transition: all 0.3s ease; letter-spacing: 0.03em;
+    font-family: 'Inter', sans-serif;
+}
+.btn-download-data:hover { background: #15803d; color: #fff; transform: translateY(-2px); }
+
 /* ── hero check mark (replaces emoji badge) ── */
 .hero-check {
     width: 56px; height: 56px;

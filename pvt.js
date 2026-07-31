@@ -217,6 +217,9 @@ function showFinalResults() {
         let users=JSON.parse(localStorage.getItem('users'))||[];
         const idx=users.findIndex(u=>u.id===currentUser.id);
         if(idx!==-1){users[idx]=currentUser;localStorage.setItem('users',JSON.stringify(users));}
+        // Incremental save: persist to the server now, so data survives even
+        // if the participant never reaches the completion page
+        fetch('/save_data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:currentUser})}).catch(()=>{});
     }
     document.getElementById('goToAnotherTest').addEventListener('click', navigateNext);
 }

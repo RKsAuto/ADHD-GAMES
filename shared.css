@@ -230,3 +230,30 @@
     transform: translateY(-2px);
     box-shadow: 0 8px 22px rgba(99, 102, 241, 0.45);
 }
+
+/* Download-data button (researcher convenience) */
+.btn-download-data {
+    display: block;
+    width: 100%;
+    max-width: 240px;
+    margin: 10px auto 0;
+    padding: 12px 24px;
+    background: #fff;
+    color: #15803d;
+    border: 2px solid #15803d;
+    border-radius: 30px;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    letter-spacing: 0.03em;
+    font-family: 'Inter', sans-serif;
+    box-sizing: border-box;
+}
+.btn-download-data:hover {
+    background: #15803d;
+    color: #fff;
+    transform: translateY(-2px);
+}

@@ -2,3 +2,6 @@ __pycache__/
 *.py[cod]
 .DS_Store
 venv/
+
+# local participant data (created when running without MONGO_URI)
+local_data.json

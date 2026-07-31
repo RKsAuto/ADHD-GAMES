@@ -3,7 +3,11 @@ I have developed some cognitive games based on research papers that measure diff
 
 ## Getting the data
 
-Deploy once (Render, via `render.yaml`, with `MONGO_URI` set). After that the export endpoints always serve the **live** database contents — no redeploy is ever needed to get fresh data:
+**Storage is automatic — one-time configuration, no redeploys:**
+- `MONGO_URI` set (deployed instance): data goes to MongoDB Atlas.
+- `MONGO_URI` not set (local runs / demos): data goes to a `local_data.json` file next to `server.py`. The full pipeline — play, auto-save, Excel download — works with zero configuration. Don't use this mode on cloud hosts (their disks are wiped on restart).
+
+Each game saves its results to the server the moment it ends (one row per participant, updated as they progress), so nothing is lost if a participant stops early. A **⬇ Download Excel** button on the PVT results screen and the completion page grabs the sheet directly; these endpoints also work from any browser or script:
 
 - `https://<your-render-url>/api/export/xlsx` — downloads a ready-to-use Excel sheet: one row per participant, one column per metric.
 - `https://<your-render-url>/api/export` — full JSON dump, including the raw per-trial arrays (`rawResults`), for pandas / sklearn.

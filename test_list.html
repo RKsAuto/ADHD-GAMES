@@ -18,7 +18,7 @@
     </style>
 </head>
 <body>
-    <div class="form-container">
+    <div class="form-container" id="registrationSection">
         <div class="form-header">
             <h1>Participant Information</h1>
             <p>Please provide your details to begin the cognitive tests</p>
@@ -93,6 +93,47 @@
             
             <button type="submit" class="btn-submit">Begin Cognitive Tests</button>
         </form>
+    </div>
+
+    <!-- Test picker (shown once a participant is registered) -->
+    <div class="form-container" id="testPickerSection" style="display:none;">
+        <div class="form-header">
+            <h1>Choose a Test</h1>
+            <p id="pickerGreeting">Pick any test to play — results save automatically after each one.</p>
+        </div>
+
+        <div class="test-picker-grid">
+            <a class="test-pick-card" href="go_no_go.html" data-test="go_no_go.html">
+                <span class="tp-icon">GNG</span>
+                <span class="tp-name">Go / No-Go</span>
+                <span class="tp-desc">Impulse control — press Space for orange squares, hold back for blue. 3 short rounds.</span>
+                <span class="tp-status"></span>
+            </a>
+            <a class="test-pick-card" href="pvt.html" data-test="pvt.html">
+                <span class="tp-icon">PVT</span>
+                <span class="tp-name">Vigilance Task (PVT)</span>
+                <span class="tp-desc">Sustained attention — react to red numbers as fast as you can. 3 rounds, 10 minutes total.</span>
+                <span class="tp-status"></span>
+            </a>
+            <a class="test-pick-card" href="trail_making.html" data-test="trail_making.html">
+                <span class="tp-icon">TMT</span>
+                <span class="tp-name">Trail Making</span>
+                <span class="tp-desc">Cognitive flexibility — connect numbers and letters in order, against the clock.</span>
+                <span class="tp-status"></span>
+            </a>
+            <a class="test-pick-card" href="dual_n_back.html" data-test="dual_n_back.html">
+                <span class="tp-icon">DNB</span>
+                <span class="tp-name">Dual N-Back</span>
+                <span class="tp-desc">Working memory — match positions and spoken letters. 6 blocks, about 5 minutes.</span>
+                <span class="tp-status"></span>
+            </a>
+        </div>
+
+        <div class="picker-actions">
+            <button id="finishBtn" class="btn-submit">Finish &amp; View Results</button>
+            <br>
+            <button id="newParticipantBtn" class="link-new-participant">Start a new participant instead</button>
+        </div>
     </div>
 
     <script src="test_list.js"></script>

@@ -1,12 +1,56 @@
 document.addEventListener('DOMContentLoaded', function() {
-    // Check for existing user session
-    const currentUser = sessionStorage.getItem('currentUser');
-    
-    if (currentUser) {
-        window.location.href = 'go_no_go.html';
+    // ── Test picker ──────────────────────────────────────────────
+    // With a registered participant, show the picker so they choose
+    // which test to play; otherwise show the registration form.
+    const RESULT_KEYS = {
+        'go_no_go.html':     'goNoGo',
+        'pvt.html':          'pvt',
+        'trail_making.html': 'trailMaking',
+        'dual_n_back.html':  'dualNBack'
+    };
+
+    function showTestPicker() {
+        document.getElementById('registrationSection').style.display = 'none';
+        document.getElementById('testPickerSection').style.display = 'block';
+
+        const user      = JSON.parse(sessionStorage.getItem('currentUser') || 'null');
+        const completed = JSON.parse(sessionStorage.getItem('completedTests')) || [];
+
+        document.querySelectorAll('.test-pick-card').forEach(card => {
+            const test = card.dataset.test;
+            const done = completed.includes(test) || !!(user && user.results && user.results[RESULT_KEYS[test]]);
+            const badge = card.querySelector('.tp-status');
+            if (done) {
+                card.classList.add('tp-done');
+                badge.textContent = '✓ Completed — click to replay';
+            } else {
+                badge.textContent = 'Not played yet';
+            }
+        });
+
+        if (user && user.name) {
+            document.getElementById('pickerGreeting').textContent =
+                `${user.name}, pick any test to play — results save automatically after each one.`;
+        }
+    }
+
+    document.getElementById('finishBtn').addEventListener('click', () => {
+        window.location.href = 'completion.html';
+    });
+
+    document.getElementById('newParticipantBtn').addEventListener('click', () => {
+        sessionStorage.removeItem('currentUser');
+        sessionStorage.removeItem('completedTests');
+        sessionStorage.removeItem('dataSaved');
+        document.getElementById('testPickerSection').style.display = 'none';
+        document.getElementById('registrationSection').style.display = 'block';
+    });
+
+    if (sessionStorage.getItem('currentUser')) {
+        showTestPicker();
         return;
     }
-    
+
     // Initialize users array
     let users = JSON.parse(localStorage.getItem('users')) || [];
     
@@ -81,9 +125,9 @@ document.addEventListener('DOMContentLoaded', function() {
             users.push(user);
             localStorage.setItem('users', JSON.stringify(users));
             sessionStorage.setItem('currentUser', JSON.stringify(user));
-            
-            // Redirect to first test
-            window.location.href = 'go_no_go.html';
+
+            // Let the participant choose which test to play
+            showTestPicker();
         });
     }
     

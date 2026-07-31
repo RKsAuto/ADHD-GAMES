@@ -42,9 +42,8 @@ function navigateNext() {
     if (!completed.includes(THIS_TEST)) completed.push(THIS_TEST);
     sessionStorage.setItem('completedTests', JSON.stringify(completed));
     const remaining = ALL_TESTS.filter(t => !completed.includes(t));
-    location.href = remaining.length > 0
-        ? remaining[Math.floor(Math.random() * remaining.length)]
-        : 'completion.html';
+    // Back to the test picker until every test is done
+    location.href = remaining.length > 0 ? 'test_list.html' : 'completion.html';
 }
 
 function skipCurrentRound() {

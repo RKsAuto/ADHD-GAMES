@@ -34,38 +34,49 @@ def load_local_docs():
 
 def store_document(document):
     """
-    Upsert one participant record (keyed by userId) into MongoDB when
-    MONGO_URI is configured, otherwise into the local JSON file.
-    Returns the storage name, or None if MongoDB is configured but down.
+    Persist one participant record (keyed by userId, upsert semantics).
+    Always writes the local JSON file; additionally upserts into MongoDB
+    when MONGO_URI is configured (MongoDB is the authoritative store, the
+    file doubles as an on-box backup). Returns a storage description, or
+    None only if every available storage failed.
     """
+    local_ok = False
+    try:
+        docs = [d for d in load_local_docs() if d.get('userId') != document['userId']]
+        docs.append(document)
+        with open(LOCAL_DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(docs, f, indent=1)
+        local_ok = True
+    except OSError as e:
+        print(f'[LOCAL] write failed: {e}')
+
     if MONGO_URI:
         col = get_collection()
-        if col is None:
-            return None
-        col.replace_one({'userId': document['userId']}, document, upsert=True)
-        return 'MongoDB'
-    docs = [d for d in load_local_docs() if d.get('userId') != document['userId']]
-    docs.append(document)
-    with open(LOCAL_DATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(docs, f, indent=1)
-    return 'local file'
+        if col is not None:
+            col.replace_one({'userId': document['userId']}, document, upsert=True)
+            return 'MongoDB + local file' if local_ok else 'MongoDB'
+        print('[DB] MongoDB unreachable — record kept in local file only')
+        return 'local file (MongoDB unreachable)' if local_ok else None
+    return 'local file' if local_ok else None
 
 
 def fetch_documents(include_raw=True):
     """
-    All participant records from whichever storage is active.
-    Returns None if MongoDB is configured but unreachable.
+    Returns (docs, warning). MongoDB is authoritative when configured;
+    if it is unreachable, falls back to the local backup file and sets a
+    warning string so callers can surface the degraded state.
     """
+    warning = None
     if MONGO_URI:
         col = get_collection()
-        if col is None:
-            return None
-        proj = {'_id': 0} if include_raw else {'_id': 0, 'rawResults': 0}
-        return list(col.find({}, proj))
+        if col is not None:
+            proj = {'_id': 0} if include_raw else {'_id': 0, 'rawResults': 0}
+            return list(col.find({}, proj)), None
+        warning = 'MongoDB is configured but unreachable — showing the local backup file, which may be incomplete'
     docs = load_local_docs()
     if not include_raw:
         docs = [{k: v for k, v in d.items() if k != 'rawResults'} for d in docs]
-    return docs
+    return docs, warning
 
 # ── DB connection (lazy, cached) ──────────────────────────────────
 _collection = None
@@ -292,7 +303,7 @@ def save_data():
         if storage is None:
             return jsonify({
                 'status':  'error',
-                'message': 'MONGO_URI is set but the database is unreachable.'
+                'message': 'Could not persist data: database unreachable and local write failed.'
             }), 503
 
         print(f"  → Saved to {storage}: {document['userId']}")
@@ -314,7 +325,9 @@ def api_status():
             return jsonify({'status': 'db_disconnected', 'hint': 'MONGO_URI is set but the database is unreachable'}), 503
         try:
             count = col.count_documents({})
-            return jsonify({'status': 'ok', 'storage': 'MongoDB', 'participants_saved': count}), 200
+            return jsonify({'status': 'ok', 'storage': 'MongoDB (+ local backup file)',
+                            'participants_saved': count,
+                            'local_backup_records': len(load_local_docs())}), 200
         except Exception as e:
             return jsonify({'status': 'error', 'message': str(e)}), 500
     return jsonify({'status': 'ok', 'storage': 'local file (MONGO_URI not set)',
@@ -343,9 +356,9 @@ def export_json():
     if denied:
         return denied
     try:
-        docs = fetch_documents(include_raw=True)
-        if docs is None:
-            return jsonify({'error': 'MONGO_URI is set but the database is unreachable'}), 503
+        docs, warning = fetch_documents(include_raw=True)
+        if warning:
+            print(f'[EXPORT] {warning}')
         return jsonify(docs), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -366,6 +379,29 @@ def flatten_doc(doc, prefix=''):
     return flat
 
 
+XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+
+def build_xlsx(docs):
+    """One row per participant, one dot-notation column per metric."""
+    rows = [flatten_doc(d) for d in docs]
+    headers = []
+    for r in rows:
+        for k in r:
+            if k not in headers:
+                headers.append(k)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'participants'
+    ws.append(headers)
+    for r in rows:
+        ws.append([r.get(h) for h in headers])
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
 @app.route('/api/export/xlsx', methods=['GET'])
 def export_xlsx():
     """
@@ -380,34 +416,66 @@ def export_xlsx():
     try:
         # rawResults holds large nested trial arrays — excluded from the
         # sheet; fetch them via /api/export if needed
-        docs = fetch_documents(include_raw=False)
-        if docs is None:
-            return jsonify({'error': 'MONGO_URI is set but the database is unreachable'}), 503
-        rows = [flatten_doc(d) for d in docs]
-
-        headers = []
-        for r in rows:
-            for k in r:
-                if k not in headers:
-                    headers.append(k)
-
-        wb = Workbook()
-        ws = wb.active
-        ws.title = 'participants'
-        ws.append(headers)
-        for r in rows:
-            ws.append([r.get(h) for h in headers])
-
-        buf = BytesIO()
-        wb.save(buf)
-        buf.seek(0)
+        docs, warning = fetch_documents(include_raw=False)
+        if warning:
+            print(f'[EXPORT] {warning}')
         fname = f"adhd_data_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.xlsx"
-        return send_file(
-            buf,
-            as_attachment=True,
-            download_name=fname,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
+        return send_file(build_xlsx(docs), as_attachment=True,
+                         download_name=fname, mimetype=XLSX_MIME)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/my/xlsx', methods=['GET'])
+def export_my_xlsx():
+    """
+    Per-participant download: returns an Excel sheet containing only the
+    given participant's row. Requires no export key — the participant's own
+    userId (known only to their browser session) acts as the access token.
+    """
+    user_id = request.args.get('userId', '')
+    if not user_id:
+        return jsonify({'error': 'userId query parameter required'}), 400
+    try:
+        docs, _ = fetch_documents(include_raw=False)
+        mine = [d for d in docs if d.get('userId') == user_id]
+        if not mine:
+            return jsonify({'error': 'No saved data found for this participant yet'}), 404
+        return send_file(build_xlsx(mine), as_attachment=True,
+                         download_name='my_results.xlsx', mimetype=XLSX_MIME)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/participants', methods=['GET'])
+def api_participants():
+    """
+    Summary list for the admin dashboard: who has saved data, when, and
+    which tests they have completed. Key-protected like the exports.
+    """
+    denied = check_export_key()
+    if denied:
+        return denied
+    try:
+        docs, warning = fetch_documents(include_raw=True)
+        out = []
+        for d in docs:
+            raw = d.get('rawResults') or {}
+            m   = d.get('metrics') or {}
+            out.append({
+                'userId':  d.get('userId', ''),
+                'name':    (d.get('participant') or {}).get('name', ''),
+                'savedAt': d.get('serverTimestamp', ''),
+                'tests': {
+                    'goNoGo':      bool(raw.get('goNoGo')),
+                    'pvt':         bool(raw.get('pvt')),
+                    'trailMaking': bool(raw.get('trailMaking')),
+                    'dualNBack':   bool(raw.get('dualNBack')),
+                },
+                'pvtAvgRT': m.get('pvt_avgRT_ms'),
+            })
+        out.sort(key=lambda r: r.get('savedAt') or '', reverse=True)
+        return jsonify({'count': len(out), 'warning': warning, 'participants': out}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

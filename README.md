@@ -23,16 +23,29 @@ Games need a physical keyboard (Space / F / J). Every game has Skip buttons if y
 ## Getting the data
 
 **Storage is automatic — one-time configuration, no redeploys:**
-- `MONGO_URI` set (deployed instance): data goes to MongoDB Atlas.
-- `MONGO_URI` not set (local runs / demos): data goes to a `local_data.json` file next to `server.py`. The full pipeline — play, auto-save, Excel download — works with zero configuration. Don't use this mode on cloud hosts (their disks are wiped on restart).
+- Every save is written to a `local_data.json` file next to `server.py`, and **additionally** upserted into MongoDB Atlas when `MONGO_URI` is set. MongoDB is the authoritative store; the file doubles as an on-box backup (and is the sole store for local runs). If MongoDB is briefly unreachable, saves keep landing in the file instead of being lost.
+- Each game saves its results to the server the moment it ends (one row per participant, updated as they progress), so nothing is lost if a participant stops early.
 
-Each game saves its results to the server the moment it ends (one row per participant, updated as they progress), so nothing is lost if a participant stops early. A **⬇ Download Excel** button on the PVT results screen and the completion page grabs the sheet directly; these endpoints also work from any browser or script:
+**Participants** get a **⬇ Download My Results** button (their own row only) on the PVT results screen and the completion page.
 
-- `https://<your-render-url>/api/export/xlsx` — downloads a ready-to-use Excel sheet: one row per participant, one column per metric.
-- `https://<your-render-url>/api/export` — full JSON dump, including the raw per-trial arrays (`rawResults`), for pandas / sklearn.
-- `https://<your-render-url>/api/status` — health check: confirms DB connection and shows how many participants have been saved.
+**The experimenter** uses the admin dashboard at `https://<your-render-url>/admin.html`: live auto-refreshing table of who has saved data and which tests each person has completed, plus one-click **Download Excel (everyone)** and raw JSON. Enter the `EXPORT_KEY` in the dashboard's key box (leave blank if no key is configured).
 
-To keep participant data private, set an `EXPORT_KEY` environment variable on the server; the export endpoints then require `?key=<EXPORT_KEY>` on the URL (e.g. `/api/export/xlsx?key=mysecret`). If `EXPORT_KEY` is unset, exports are open.
+API endpoints (usable from any browser or script):
+
+- `/api/export/xlsx` — Excel sheet of everyone: one row per participant, one column per metric *(key-protected)*.
+- `/api/export` — full JSON dump including raw per-trial arrays, for pandas / sklearn *(key-protected)*.
+- `/api/my/xlsx?userId=<id>` — one participant's own row (used by the Download My Results button).
+- `/api/participants` — summary list powering the dashboard *(key-protected)*.
+- `/api/status` — health check: storage mode and participant count.
+
+Set an `EXPORT_KEY` environment variable on the server to lock the all-participant endpoints (they then require `?key=<EXPORT_KEY>`). **Strongly recommended for class sessions** — without it, anyone with the link can download everyone's data.
+
+## Running a class session
+
+1. Deploy once: Render blueprint (`render.yaml`) with `MONGO_URI` (Atlas) and `EXPORT_KEY` set; add the `RENDER_URL` GitHub variable so the keep-alive workflow keeps the server warm.
+2. Share `https://<your-render-url>/test_list.html` with the class. Everyone registers with their real name and picks tests from the menu; simultaneous play is fine.
+3. Watch progress live on `/admin.html`. Each student downloads their own results from their completion screen.
+4. When everyone is done, click **Download Excel (everyone)** on the dashboard.
 
 ## Keeping the server awake (free tier)
 

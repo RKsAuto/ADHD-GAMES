@@ -5,6 +5,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (sessionUser) currentUser = users.find(u => u.id === sessionUser.id) || users[users.length - 1];
 
     const alreadySaved = sessionStorage.getItem('dataSaved');
+
+    // Personal results download (this participant's row only)
+    if (currentUser) {
+        const dl = document.getElementById('downloadMyData');
+        if (dl) { dl.href = '/api/my/xlsx?userId=' + encodeURIComponent(currentUser.id); dl.style.display = 'inline-block'; }
+    }
     const saveBanner   = document.getElementById('save-status-banner');
     const saveText     = document.getElementById('save-text');
     const spinDot      = saveBanner.querySelector('.spin-dot');

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard — ADHD Cognitive Games</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Inter', sans-serif; background: #f5f7fa; color: #1e293b; padding: 24px; }
+        .wrap { max-width: 1000px; margin: 0 auto; }
+        h1 { font-size: 1.5rem; margin-bottom: 4px; }
+        .sub { color: #64748b; font-size: 0.9rem; margin-bottom: 20px; }
+
+        .banner { padding: 12px 16px; border-radius: 10px; font-size: 0.88rem; margin-bottom: 16px; display: none; }
+        .banner.warn  { display: block; background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+        .banner.error { display: block; background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+
+        .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 18px; }
+        .toolbar input {
+            padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 8px;
+            font-size: 0.88rem; font-family: inherit; width: 220px;
+        }
+        .btn {
+            padding: 10px 18px; border: none; border-radius: 8px; cursor: pointer;
+            font-size: 0.88rem; font-weight: 600; font-family: inherit;
+            background: #4f46e5; color: #fff; text-decoration: none; display: inline-block;
+        }
+        .btn:hover { background: #4338ca; }
+        .btn.green { background: #15803d; }
+        .btn.green:hover { background: #166534; }
+        .btn.ghost { background: #fff; color: #4f46e5; border: 1px solid #c7d2fe; }
+        .btn.ghost:hover { background: #eef2ff; }
+
+        .stats { display: flex; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
+        .stat { background: #fff; border-radius: 12px; padding: 14px 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .stat .v { font-size: 1.5rem; font-weight: 700; }
+        .stat .l { font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+
+        table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px;
+                overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        th { text-align: left; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;
+             color: #64748b; padding: 12px 14px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+        td { padding: 11px 14px; font-size: 0.87rem; border-bottom: 1px solid #f1f5f9; }
+        tr:last-child td { border-bottom: none; }
+        .done { color: #15803d; font-weight: 700; }
+        .pend { color: #cbd5e1; }
+        .muted { color: #94a3b8; font-size: 0.78rem; }
+        .empty { text-align: center; padding: 36px; color: #94a3b8; }
+        .refresh-note { font-size: 0.78rem; color: #94a3b8; margin-top: 10px; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h1>Experimenter Dashboard</h1>
+    <p class="sub">Live view of saved participants · <span id="storageLine">checking storage…</span></p>
+
+    <div id="banner" class="banner"></div>
+
+    <div class="toolbar">
+        <input type="password" id="keyInput" placeholder="Export key (blank if not set)">
+        <button class="btn ghost" id="refreshBtn">↻ Refresh</button>
+        <a class="btn green" id="xlsxBtn" href="#">⬇ Download Excel (everyone)</a>
+        <a class="btn ghost" id="jsonBtn" href="#" target="_blank">Raw JSON</a>
+    </div>
+
+    <div class="stats">
+        <div class="stat"><div class="v" id="statCount">–</div><div class="l">Participants</div></div>
+        <div class="stat"><div class="v" id="statComplete">–</div><div class="l">All 4 tests done</div></div>
+        <div class="stat"><div class="v" id="statPvt">–</div><div class="l">PVT completed</div></div>
+    </div>
+
+    <table>
+        <thead>
+        <tr>
+            <th>Name</th><th>Saved at</th>
+            <th>GNG</th><th>PVT</th><th>TMT</th><th>DNB</th>
+            <th>PVT Avg RT</th>
+        </tr>
+        </thead>
+        <tbody id="tbody">
+            <tr><td colspan="7" class="empty">Loading…</td></tr>
+        </tbody>
+    </table>
+    <p class="refresh-note">Auto-refreshes every 15 seconds while this page is open.</p>
+</div>
+<script src="admin.js"></script>
+</body>
+</html>

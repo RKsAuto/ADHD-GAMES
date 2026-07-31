@@ -221,6 +221,8 @@ function showFinalResults() {
         // Incremental save: persist to the server now, so data survives even
         // if the participant never reaches the completion page
         fetch('/save_data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:currentUser})}).catch(()=>{});
+        const dl = document.getElementById('downloadMyData');
+        if (dl) { dl.href = '/api/my/xlsx?userId=' + encodeURIComponent(currentUser.id); dl.style.display = 'block'; }
     }
     document.getElementById('goToAnotherTest').addEventListener('click', navigateNext);
 }

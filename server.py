@@ -18,18 +18,74 @@ MONGO_URI = os.environ.get('MONGO_URI', '')
 # When MONGO_URI is not set (local runs / demos), participants are stored in
 # this JSON file instead. Do NOT rely on it in cloud deployments — hosts like
 # Render wipe the local disk on every restart/redeploy.
-LOCAL_DATA_FILE = os.path.join(BASE_DIR, 'local_data.json')
+LOCAL_DATA_FILE     = os.path.join(BASE_DIR, 'local_data.json')
+LOCAL_SESSIONS_FILE = os.path.join(BASE_DIR, 'local_sessions.json')
+
+
+def _load_json_list(path):
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, encoding='utf-8') as f:
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except (OSError, ValueError):
+        return []
 
 
 def load_local_docs():
-    if not os.path.exists(LOCAL_DATA_FILE):
-        return []
+    return _load_json_list(LOCAL_DATA_FILE)
+
+
+# ── Experiment sessions ───────────────────────────────────────────
+# Each run of the experiment is a "session"; every participant record is
+# tagged with its sessionId so the admin can export one session at a time
+# (a fresh sheet per experiment) or pool them all for analysis.
+
+def load_sessions():
+    """All sessions, newest first."""
+    if MONGO_URI:
+        col = get_sessions_collection()
+        if col is not None:
+            return list(col.find({}, {'_id': 0}).sort('createdAt', -1))
+    return sorted(_load_json_list(LOCAL_SESSIONS_FILE),
+                  key=lambda s: s.get('createdAt', ''), reverse=True)
+
+
+def create_session(label=''):
+    """Start a new session; it immediately becomes the active one."""
+    now = datetime.now(timezone.utc)
+    # Second-resolution ids stay readable; disambiguate the rare collision
+    # (e.g. a double-clicked "Start New Session") so sessions never merge.
+    base = 's-' + now.strftime('%Y%m%d-%H%M%S')
+    taken = {s.get('sessionId') for s in load_sessions()}
+    session_id, n = base, 2
+    while session_id in taken:
+        session_id, n = f'{base}-{n}', n + 1
+    session = {
+        'sessionId': session_id,
+        'label':     (label or '').strip() or f"Session {now.strftime('%d %b %Y, %H:%M UTC')}",
+        'createdAt': now.isoformat(),
+    }
     try:
-        with open(LOCAL_DATA_FILE, encoding='utf-8') as f:
-            docs = json.load(f)
-            return docs if isinstance(docs, list) else []
-    except (OSError, ValueError):
-        return []
+        sessions = _load_json_list(LOCAL_SESSIONS_FILE)
+        sessions.append(session)
+        with open(LOCAL_SESSIONS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(sessions, f, indent=1)
+    except OSError as e:
+        print(f'[LOCAL] session write failed: {e}')
+
+    if MONGO_URI:
+        col = get_sessions_collection()
+        if col is not None:
+            col.insert_one(dict(session))
+    return session
+
+
+def active_session():
+    """Newest session, creating a first one on demand."""
+    sessions = load_sessions()
+    return sessions[0] if sessions else create_session()
 
 
 def store_document(document):
@@ -40,6 +96,19 @@ def store_document(document):
     file doubles as an on-box backup). Returns a storage description, or
     None only if every available storage failed.
     """
+    # Tag with the session that is active when the FIRST record for this
+    # participant lands, so someone who keeps playing across a session
+    # boundary stays in the session they started in.
+    existing = next((d for d in load_local_docs()
+                     if d.get('userId') == document['userId']), None)
+    if existing and existing.get('sessionId'):
+        document['sessionId']    = existing['sessionId']
+        document['sessionLabel'] = existing.get('sessionLabel', '')
+    else:
+        sess = active_session()
+        document['sessionId']    = sess['sessionId']
+        document['sessionLabel'] = sess['label']
+
     local_ok = False
     try:
         docs = [d for d in load_local_docs() if d.get('userId') != document['userId']]
@@ -60,43 +129,59 @@ def store_document(document):
     return 'local file' if local_ok else None
 
 
-def fetch_documents(include_raw=True):
+def fetch_documents(include_raw=True, session_id=None):
     """
     Returns (docs, warning). MongoDB is authoritative when configured;
     if it is unreachable, falls back to the local backup file and sets a
     warning string so callers can surface the degraded state.
+
+    session_id: None/'all' returns every session; otherwise only that
+    session's participants.
     """
     warning = None
+    query = {} if session_id in (None, '', 'all') else {'sessionId': session_id}
     if MONGO_URI:
         col = get_collection()
         if col is not None:
             proj = {'_id': 0} if include_raw else {'_id': 0, 'rawResults': 0}
-            return list(col.find({}, proj)), None
+            return list(col.find(query, proj)), None
         warning = 'MongoDB is configured but unreachable — showing the local backup file, which may be incomplete'
     docs = load_local_docs()
+    if query:
+        docs = [d for d in docs if d.get('sessionId') == session_id]
     if not include_raw:
         docs = [{k: v for k, v in d.items() if k != 'rawResults'} for d in docs]
     return docs, warning
 
 # ── DB connection (lazy, cached) ──────────────────────────────────
-_collection = None
+_db = None
 
-def get_collection():
-    global _collection
-    if _collection is not None:
-        return _collection
+def get_db():
+    global _db
+    if _db is not None:
+        return _db
     if not MONGO_URI:
         print(f'[DB] MONGO_URI not set — storing data in {LOCAL_DATA_FILE}')
         return None
     try:
         client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
         client.admin.command('ping')          # fail fast if URI is wrong
-        _collection = client['adhd_assessment']['participants']
+        _db = client['adhd_assessment']
         print('[DB] Connected to MongoDB Atlas.')
-        return _collection
+        return _db
     except ServerSelectionTimeoutError as e:
         print(f'[DB] Connection failed: {e}')
         return None
+
+
+def get_collection():
+    db = get_db()
+    return db['participants'] if db is not None else None
+
+
+def get_sessions_collection():
+    db = get_db()
+    return db['sessions'] if db is not None else None
 
 # ── Static file serving (Flask serves the whole frontend) ─────────
 @app.route('/')
@@ -346,17 +431,68 @@ def check_export_key():
     return None
 
 
-@app.route('/api/export', methods=['GET'])
-def export_json():
+def session_arg():
+    """?session=<id> selects one session; omitted or 'all' means every session."""
+    return request.args.get('session', 'all')
+
+
+@app.route('/api/sessions', methods=['GET'])
+def api_sessions_list():
     """
-    Download all records as JSON (useful for piping into pandas / sklearn).
-    Visit: https://<your-render-url>/api/export
+    Sessions newest first, each with its participant count, for the admin
+    dashboard's session switcher.
     """
     denied = check_export_key()
     if denied:
         return denied
     try:
-        docs, warning = fetch_documents(include_raw=True)
+        sessions = load_sessions()
+        docs, warning = fetch_documents(include_raw=False)
+        counts = {}
+        for d in docs:
+            counts[d.get('sessionId', '')] = counts.get(d.get('sessionId', ''), 0) + 1
+        out = [{**s, 'participants': counts.get(s['sessionId'], 0)} for s in sessions]
+        # Records saved before sessions existed (or whose session row is gone)
+        orphans = sum(c for sid, c in counts.items()
+                      if sid not in {s['sessionId'] for s in sessions})
+        return jsonify({'sessions': out, 'total': len(docs), 'unassigned': orphans,
+                        'activeSessionId': out[0]['sessionId'] if out else None,
+                        'warning': warning}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/sessions/new', methods=['POST'])
+def api_sessions_new():
+    """
+    Start a new experiment session. Participants who register from now on are
+    tagged with it, so the dashboard and its Excel export start empty again.
+    Previous sessions stay browsable and re-exportable — nothing is deleted.
+    """
+    denied = check_export_key()
+    if denied:
+        return denied
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        session = create_session(payload.get('label', ''))
+        print(f"[SESSION] started {session['sessionId']} ({session['label']})")
+        return jsonify({'status': 'success', 'session': session}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/export', methods=['GET'])
+def export_json():
+    """
+    Download records as JSON (useful for piping into pandas / sklearn).
+    Visit: https://<your-render-url>/api/export
+    Add ?session=<sessionId> for a single experiment session.
+    """
+    denied = check_export_key()
+    if denied:
+        return denied
+    try:
+        docs, warning = fetch_documents(include_raw=True, session_id=session_arg())
         if warning:
             print(f'[EXPORT] {warning}')
         return jsonify(docs), 200
@@ -382,6 +518,13 @@ def flatten_doc(doc, prefix=''):
 XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 
+# Shown when an export has no participants yet, so the file still opens as a
+# valid (empty) sheet instead of a blank one with no header row at all.
+EMPTY_HEADERS = ['userId', 'sessionId', 'sessionLabel', 'serverTimestamp',
+                 'participant.name', 'participant.age', 'participant.sex',
+                 'participant.adhdStatus']
+
+
 def build_xlsx(docs):
     """One row per participant, one dot-notation column per metric."""
     rows = [flatten_doc(d) for d in docs]
@@ -390,6 +533,8 @@ def build_xlsx(docs):
         for k in r:
             if k not in headers:
                 headers.append(k)
+    if not headers:
+        headers = list(EMPTY_HEADERS)
     wb = Workbook()
     ws = wb.active
     ws.title = 'participants'
@@ -405,10 +550,11 @@ def build_xlsx(docs):
 @app.route('/api/export/xlsx', methods=['GET'])
 def export_xlsx():
     """
-    Download all records as a ready-to-use Excel sheet: one row per
-    participant, one column per metric. Always reflects the live database —
-    no redeploy needed between exports.
+    Download records as a ready-to-use Excel sheet: one row per participant,
+    one column per metric. Always reflects the live database — no redeploy
+    needed between exports.
     Visit: https://<your-render-url>/api/export/xlsx
+    Add ?session=<sessionId> for one experiment session's fresh sheet.
     """
     denied = check_export_key()
     if denied:
@@ -416,10 +562,12 @@ def export_xlsx():
     try:
         # rawResults holds large nested trial arrays — excluded from the
         # sheet; fetch them via /api/export if needed
-        docs, warning = fetch_documents(include_raw=False)
+        session_id = session_arg()
+        docs, warning = fetch_documents(include_raw=False, session_id=session_id)
         if warning:
             print(f'[EXPORT] {warning}')
-        fname = f"adhd_data_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.xlsx"
+        tag = '' if session_id in ('all', '', None) else f'_{session_id}'
+        fname = f"adhd_data{tag}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.xlsx"
         return send_file(build_xlsx(docs), as_attachment=True,
                          download_name=fname, mimetype=XLSX_MIME)
     except Exception as e:
@@ -452,12 +600,13 @@ def api_participants():
     """
     Summary list for the admin dashboard: who has saved data, when, and
     which tests they have completed. Key-protected like the exports.
+    Add ?session=<sessionId> to scope it to one experiment session.
     """
     denied = check_export_key()
     if denied:
         return denied
     try:
-        docs, warning = fetch_documents(include_raw=True)
+        docs, warning = fetch_documents(include_raw=True, session_id=session_arg())
         out = []
         for d in docs:
             raw = d.get('rawResults') or {}
@@ -472,7 +621,9 @@ def api_participants():
                     'trailMaking': bool(raw.get('trailMaking')),
                     'dualNBack':   bool(raw.get('dualNBack')),
                 },
-                'pvtAvgRT': m.get('pvt_avgRT_ms'),
+                'pvtAvgRT':     m.get('pvt_avgRT_ms'),
+                'sessionId':    d.get('sessionId', ''),
+                'sessionLabel': d.get('sessionLabel', ''),
             })
         out.sort(key=lambda r: r.get('savedAt') or '', reverse=True)
         return jsonify({'count': len(out), 'warning': warning, 'participants': out}), 200

@@ -32,6 +32,21 @@
         .btn.ghost { background: #fff; color: #4f46e5; border: 1px solid #c7d2fe; }
         .btn.ghost:hover { background: #eef2ff; }
 
+        .session-bar {
+            background: #fff; border-radius: 12px; padding: 14px 18px; margin-bottom: 18px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05); display: flex; gap: 14px;
+            align-items: flex-end; flex-wrap: wrap;
+        }
+        .session-pick label {
+            display: block; font-size: 0.72rem; text-transform: uppercase;
+            letter-spacing: 0.06em; color: #64748b; margin-bottom: 6px;
+        }
+        .session-pick select {
+            padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 8px;
+            font-size: 0.88rem; font-family: inherit; min-width: 300px; background: #fff;
+        }
+        .session-hint { flex: 1 1 100%; font-size: 0.78rem; color: #94a3b8; margin-top: 2px; }
+
         .stats { display: flex; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
         .stat { background: #fff; border-radius: 12px; padding: 14px 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
         .stat .v { font-size: 1.5rem; font-weight: 700; }
@@ -60,8 +75,17 @@
     <div class="toolbar">
         <input type="password" id="keyInput" placeholder="Export key (blank if not set)">
         <button class="btn ghost" id="refreshBtn">↻ Refresh</button>
-        <a class="btn green" id="xlsxBtn" href="#">⬇ Download Excel (everyone)</a>
+        <a class="btn green" id="xlsxBtn" href="#">⬇ Download Excel</a>
         <a class="btn ghost" id="jsonBtn" href="#" target="_blank">Raw JSON</a>
+    </div>
+
+    <div class="session-bar">
+        <div class="session-pick">
+            <label for="sessionSelect">Experiment session</label>
+            <select id="sessionSelect"></select>
+        </div>
+        <button class="btn" id="newSessionBtn">+ Start New Session</button>
+        <p class="session-hint" id="sessionHint"></p>
     </div>
 
     <div class="stats">

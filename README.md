@@ -28,15 +28,27 @@ Games need a physical keyboard (Space / F / J). Every game has Skip buttons if y
 
 **Participants** get a **⬇ Download My Results** button (their own row only) on the PVT results screen and the completion page.
 
-**The experimenter** uses the admin dashboard at `https://<your-render-url>/admin.html`: live auto-refreshing table of who has saved data and which tests each person has completed, plus one-click **Download Excel (everyone)** and raw JSON. Enter the `EXPORT_KEY` in the dashboard's key box (leave blank if no key is configured).
+**The experimenter** uses the admin dashboard at `https://<your-render-url>/admin.html`: live auto-refreshing table of who has saved data and which tests each person has completed, plus one-click **Download Excel** and raw JSON. Enter the `EXPORT_KEY` in the dashboard's key box (leave blank if no key is configured).
+
+### Experiment sessions (a fresh sheet per experiment)
+
+Every participant record is tagged with the **session** that was live when they registered. Click **+ Start New Session** on the dashboard before an experiment: the table and its Excel download start empty again, while every earlier session stays browsable and re-exportable from the session dropdown. Nothing is ever deleted.
+
+- The dropdown lists sessions newest first with participant counts; the top one is marked **LIVE** (new participants join it).
+- Selecting a past session shows its data read-only and scopes the download buttons to it.
+- **All sessions pooled** exports every session together — use it for model training across experiments.
+- A participant who is mid-way through when a new session starts stays in the session they began in, so their record never splits.
 
 API endpoints (usable from any browser or script):
 
-- `/api/export/xlsx` — Excel sheet of everyone: one row per participant, one column per metric *(key-protected)*.
+- `/api/export/xlsx` — Excel sheet: one row per participant, one column per metric *(key-protected)*.
 - `/api/export` — full JSON dump including raw per-trial arrays, for pandas / sklearn *(key-protected)*.
 - `/api/my/xlsx?userId=<id>` — one participant's own row (used by the Download My Results button).
 - `/api/participants` — summary list powering the dashboard *(key-protected)*.
+- `/api/sessions` — session list with counts; `POST /api/sessions/new` starts one *(key-protected)*.
 - `/api/status` — health check: storage mode and participant count.
+
+The export and participant endpoints accept `?session=<sessionId>` to scope them to one experiment session; omitting it returns every session pooled.
 
 Set an `EXPORT_KEY` environment variable on the server to lock the all-participant endpoints (they then require `?key=<EXPORT_KEY>`). **Strongly recommended for class sessions** — without it, anyone with the link can download everyone's data.
 

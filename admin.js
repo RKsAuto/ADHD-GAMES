@@ -21,9 +21,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // '' means "whatever session is active"; resolve it for API calls
     function currentSession() { return selectedSession || activeSessionId || 'all'; }
 
+    // A notice survives the next few auto-refreshes so confirmations aren't
+    // wiped a moment after the experimenter clicks something.
+    let notice = '', noticeTicks = 0;
+
     function setBanner(kind, text) {
         banner.className = 'banner' + (kind ? ' ' + kind : '');
         banner.textContent = text || '';
+    }
+
+    function setNotice(text) {
+        notice = text;
+        noticeTicks = 4;            // ~1 minute at the 15 s refresh interval
+        setBanner('warn', notice);
     }
 
     function mark(done) { return done ? '<span class="done">✓</span>' : '<span class="pend">·</span>'; }
@@ -96,6 +106,10 @@ document.addEventListener('DOMContentLoaded', () => {
             warn += (warn ? ' · ' : '') +
                 `${sessionData.unassigned} record(s) predate sessions — use "All sessions pooled" to include them.`;
         }
+        if (noticeTicks > 0) {
+            noticeTicks--;
+            warn = warn ? `${notice} · ${warn}` : notice;
+        }
         setBanner(warn ? 'warn' : '', warn);
 
         const ps = data.participants || [];
@@ -142,7 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await resp.json();
             selectedSession = '';   // follow the new live session
             sessionStorage.removeItem('adminSession');
-            setBanner('warn', `New session started: ${data.session.label}. The table and downloads are fresh — earlier sessions stay available in the dropdown.`);
+            setNotice(`New session started: "${data.session.label}". The table and downloads are fresh — no earlier data was deleted; previous sessions remain in the dropdown.`);
             refresh();
         } catch {
             setBanner('error', 'Could not start a new session.');

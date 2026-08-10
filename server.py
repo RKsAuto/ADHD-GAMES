@@ -222,6 +222,23 @@ def median(arr):
     except (TypeError, ValueError):
         return None
 
+def mean_rrt(rts_ms):
+    """
+    Mean reciprocal reaction time in responses/second: the mean of 1/RT,
+    not 1/mean(RT). Server-side fallback for records saved before the
+    client started sending overallMeanRRT.
+    """
+    vals = []
+    for x in (rts_ms or []):
+        try:
+            ms = float(x)
+            if ms > 0:
+                vals.append(1000.0 / ms)
+        except (TypeError, ValueError):
+            continue
+    return round(sum(vals) / len(vals), 3) if vals else None
+
+
 def block_val(rounds, idx, field):
     if isinstance(rounds, list) and idx < len(rounds):
         return num(rounds[idx].get(field))
@@ -345,21 +362,32 @@ def save_data():
 
                 # PVT
                 'pvt_avgRT_ms':      num(pvt.get('overallAvgRT')),
+                # Mean reciprocal reaction time (1/RT), responses per second.
+                # Higher = better. Computed as the mean of the reciprocals.
+                'pvt_meanRRT':       num(pvt.get('overallMeanRRT')) if pvt.get('overallMeanRRT') is not None else mean_rrt(pvt_all_rts),
                 'pvt_medianRT_ms':   median(pvt_all_rts),
                 'pvt_rtv_ms':        num(pvt.get('overallRTV')),
-                'pvt_lapses':        num(pvt.get('totalLapses')),
+                'pvt_lapses_gt500ms': num(pvt.get('totalLapses')),
+                'pvt_noResponses':   num(pvt.get('totalNoResponses')),
+                'pvt_lapses':        num(pvt.get('totalLapses')),   # kept: same as pvt_lapses_gt500ms
                 'pvt_falseStarts':   num(pvt.get('totalFalseStarts')),
                 'pvt_validAttempts': num(pvt.get('totalValidAttempts')),
                 'pvt_temporalDrift': num(pvt.get('temporalDriftIdx')),
                 'pvt_b1_avgRT':      block_val(pvt_rounds, 0, 'avgRT'),
+                'pvt_b1_rrt':        block_val(pvt_rounds, 0, 'meanRRT'),
                 'pvt_b1_rtv':        block_val(pvt_rounds, 0, 'rtVariability'),
                 'pvt_b1_lapses':     block_val(pvt_rounds, 0, 'lapses'),
+                'pvt_b1_noResp':     block_val(pvt_rounds, 0, 'noResponses'),
                 'pvt_b2_avgRT':      block_val(pvt_rounds, 1, 'avgRT'),
+                'pvt_b2_rrt':        block_val(pvt_rounds, 1, 'meanRRT'),
                 'pvt_b2_rtv':        block_val(pvt_rounds, 1, 'rtVariability'),
                 'pvt_b2_lapses':     block_val(pvt_rounds, 1, 'lapses'),
+                'pvt_b2_noResp':     block_val(pvt_rounds, 1, 'noResponses'),
                 'pvt_b3_avgRT':      block_val(pvt_rounds, 2, 'avgRT'),
+                'pvt_b3_rrt':        block_val(pvt_rounds, 2, 'meanRRT'),
                 'pvt_b3_rtv':        block_val(pvt_rounds, 2, 'rtVariability'),
                 'pvt_b3_lapses':     block_val(pvt_rounds, 2, 'lapses'),
+                'pvt_b3_noResp':     block_val(pvt_rounds, 2, 'noResponses'),
 
                 # Trail Making
                 'trail_partA_s':      trail_a,

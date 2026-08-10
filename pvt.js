@@ -1,10 +1,18 @@
 const ALL_TESTS = ['go_no_go.html', 'pvt.html', 'trail_making.html', 'dual_n_back.html'];
 const THIS_TEST = 'pvt.html';
 
+// ── Protocol constants (Dinges & Powell PVT) ──────────────────
+const ISI_MIN_MS         = 2000;   // stimulus every 2–10 s
+const ISI_MAX_MS         = 10000;
+const RESPONSE_WINDOW_MS = 10000;  // stimulus stays until response or 10 s
+const LAPSE_MS           = 500;    // responses slower than this are lapses
+const FALSE_START_MS     = 100;    // faster than this is anticipatory
+
 let startTime;
 let reactionTimes = [];
 let falseStarts   = 0;
-let lapses        = 0;
+let lapses        = 0;   // slow responses (> LAPSE_MS)
+let noResponses   = 0;   // no press within RESPONSE_WINDOW_MS
 let testDuration  = 200;   // 3 rounds × 200 s = 10-minute PVT (standard protocol length)
 let practiceDuration = 30; // practice stays short
 let timeLeft      = testDuration;
@@ -76,7 +84,7 @@ function startTestRound(round) {
     showNextStimulus(false);
 }
 
-function resetBlockCounters() { reactionTimes = []; falseStarts = 0; lapses = 0; }
+function resetBlockCounters() { reactionTimes = []; falseStarts = 0; lapses = 0; noResponses = 0; }
 
 function showNextStimulus(showFeedback) {
     if (!isTestRunning) return;
@@ -92,13 +100,15 @@ function showNextStimulus(showFeedback) {
             else clearInterval(counterInterval);
         }, 10);
         stimulusTimeout = setTimeout(() => {
-            if (isStimulusOn) lapses++;
+            // No press within the response window — a non-response, counted
+            // alongside slow responses when reporting total lapses
+            if (isStimulusOn) noResponses++;
             stimulusDisplay.textContent = '+'; stimulusDisplay.style.color = '#000';
             isStimulusOn = false; clearInterval(counterInterval);
             // showNextStimulus applies its own 2–10 s fixation delay — no extra delay here
             showNextStimulus(showFeedback);
-        }, 1000);
-    }, Math.random() * 8000 + 2000);
+        }, RESPONSE_WINDOW_MS);
+    }, Math.random() * (ISI_MAX_MS - ISI_MIN_MS) + ISI_MIN_MS);
 }
 
 function handleKeyPress(e) {
@@ -109,13 +119,13 @@ function handleKeyPress(e) {
     const currentTime = Date.now();
     if (isStimulusOn) {
         const reactionTime = currentTime - startTime;
-        if (reactionTime < 100) {
+        if (reactionTime < FALSE_START_MS) {
             falseStarts++;
-            if (isPracticeRound) { messageElement.textContent = 'False start! (<100ms)'; messageElement.style.color = '#e74c3c'; }
+            if (isPracticeRound) { messageElement.textContent = `False start! (<${FALSE_START_MS}ms)`; messageElement.style.color = '#e74c3c'; }
         } else {
             reactionTimes.push(reactionTime);
-            if (reactionTime > 500) lapses++;
-            if (isPracticeRound) { messageElement.textContent = `${reactionTime}ms${reactionTime > 500 ? ' (lapse)' : ''}`; messageElement.style.color = reactionTime > 500 ? '#e67e22' : '#27ae60'; }
+            if (reactionTime > LAPSE_MS) lapses++;
+            if (isPracticeRound) { messageElement.textContent = `${reactionTime}ms${reactionTime > LAPSE_MS ? ' (lapse)' : ''}`; messageElement.style.color = reactionTime > LAPSE_MS ? '#e67e22' : '#27ae60'; }
         }
         stimulusDisplay.textContent = '+'; stimulusDisplay.style.color = '#000';
         isStimulusOn = false;
@@ -151,12 +161,23 @@ function endRound() {
     const avgRT = computeMean(blockRTs);
     const rtVariability = computeSD(blockRTs);
     if (isPracticeRound) { setTimeout(() => startTestRound(1), 2000); return; }
-    roundResults.push({ round: currentRound, avgRT, rtVariability, validAttempts: blockRTs.length, falseStarts, lapses, rtArray: blockRTs });
+    roundResults.push({ round: currentRound, avgRT, rtVariability, validAttempts: blockRTs.length,
+                        falseStarts, lapses, noResponses, meanRRT: computeMeanRRT(blockRTs),
+                        rtArray: blockRTs });
     if (currentRound < totalRounds) { currentRound++; setTimeout(() => startTestRound(currentRound), 2000); }
     else showFinalResults();
 }
 
 function computeMean(arr) { if (!arr.length) return 0; return Math.round(arr.reduce((a,b)=>a+b,0)/arr.length); }
+// Mean reciprocal reaction time (responses per second): the MEAN OF THE
+// RECIPROCALS 1/RT, not the reciprocal of the mean — that is the point of
+// RRT, it de-weights the long right tail of the RT distribution.
+// Higher = better performance.
+function computeMeanRRT(arrMs) {
+    if (!arrMs.length) return 0;
+    const sum = arrMs.reduce((s, ms) => s + (1000 / ms), 0);
+    return Math.round((sum / arrMs.length) * 1000) / 1000;   // 3 decimals
+}
 function computeMedian(arr) {
     if (!arr.length) return 0;
     const sorted = [...arr].sort((a, b) => a - b);
@@ -181,16 +202,20 @@ const badgeLabel = { good:'Good', ok:'Fair', warn:'Note', concern:'Review' };
 function showFinalResults() {
     document.getElementById('testScreen').style.display = 'none';
     document.getElementById('resultsScreen').style.display = 'block';
-    let totalValid=0, totalFS=0, totalLapses=0, allRTs=[];
-    roundResults.forEach(r => { totalValid+=r.validAttempts; totalFS+=r.falseStarts; totalLapses+=r.lapses; allRTs=allRTs.concat(r.rtArray); });
+    let totalValid=0, totalFS=0, totalLapses=0, totalNoResp=0, allRTs=[];
+    roundResults.forEach(r => { totalValid+=r.validAttempts; totalFS+=r.falseStarts; totalLapses+=r.lapses;
+                                totalNoResp+=(r.noResponses||0); allRTs=allRTs.concat(r.rtArray); });
     const overallAvgRT=computeMean(allRTs), overallMedianRT=computeMedian(allRTs), overallRTV=computeSD(allRTs);
+    const overallMeanRRT=computeMeanRRT(allRTs);
     const tdi=computeTemporalDriftIndex(roundResults.map(r=>r.rtVariability));
 
     const cards = [
         { label:'Avg RT',          value: overallAvgRT    ||'–', unit:'ms',     badge: overallAvgRT    ? rtBadge(overallAvgRT)        : 'ok' },
+        { label:'Mean RRT',        value: overallMeanRRT ? overallMeanRRT.toFixed(2) : '–', unit:'1/s (higher = better)', badge: overallMeanRRT >= 3.3 ? 'good' : overallMeanRRT >= 2.2 ? 'ok' : 'concern' },
         { label:'Median RT',       value: overallMedianRT ||'–', unit:'ms',     badge: overallMedianRT ? rtBadge(overallMedianRT)      : 'ok' },
         { label:'RT Variability',  value: overallRTV      ||'–', unit:'ms SD',  badge: overallRTV      ? getBadge(overallRTV,80,140)   : 'ok' },
         { label:'Lapses',          value: totalLapses,            unit:'RT > 500 ms', badge: getBadge(totalLapses,2,6) },
+        { label:'No Responses',    value: totalNoResp,            unit:'no press in 10 s', badge: getBadge(totalNoResp,0,2) },
         { label:'False Starts',    value: totalFS,                unit:'anticipatory', badge: getBadge(totalFS,2,6) },
         { label:'Valid Trials',    value: totalValid,             unit:'responses', badge: totalValid >= 60 ? 'good' : totalValid >= 30 ? 'ok' : 'concern' },
     ];
@@ -206,14 +231,16 @@ function showFinalResults() {
     tbody.innerHTML='';
     roundResults.forEach(r => {
         const row=document.createElement('tr');
-        row.innerHTML=`<td>${r.round}</td><td>${r.validAttempts>0?r.avgRT+' ms':'N/A'}</td><td>${r.rtVariability>0?r.rtVariability+' ms':'N/A'}</td><td>${r.validAttempts}</td><td>${r.lapses}</td><td>${r.falseStarts}</td>`;
+        row.innerHTML=`<td>${r.round}</td><td>${r.validAttempts>0?r.avgRT+' ms':'N/A'}</td><td>${r.meanRRT?r.meanRRT.toFixed(2):'–'}</td><td>${r.rtVariability>0?r.rtVariability+' ms':'N/A'}</td><td>${r.validAttempts}</td><td>${r.lapses}</td><td>${r.noResponses||0}</td><td>${r.falseStarts}</td>`;
         tbody.appendChild(row);
     });
-    tfoot.innerHTML=`<tr><td>Total</td><td>${overallAvgRT>0?overallAvgRT+' ms':'–'}</td><td>${overallRTV>0?overallRTV+' ms':'–'}</td><td>${totalValid}</td><td>${totalLapses}</td><td>${totalFS}</td></tr>`;
+    tfoot.innerHTML=`<tr><td>Total</td><td>${overallAvgRT>0?overallAvgRT+' ms':'–'}</td><td>${overallMeanRRT?overallMeanRRT.toFixed(2):'–'}</td><td>${overallRTV>0?overallRTV+' ms':'–'}</td><td>${totalValid}</td><td>${totalLapses}</td><td>${totalNoResp}</td><td>${totalFS}</td></tr>`;
 
     let currentUser=JSON.parse(sessionStorage.getItem('currentUser'));
     if (currentUser) {
-        currentUser.results.pvt={rounds:roundResults,overallAvgRT,overallMedianRT,overallRTV,totalValidAttempts:totalValid,totalLapses,totalFalseStarts:totalFS,temporalDriftIdx:tdi,allRTs};
+        currentUser.results.pvt={rounds:roundResults,overallAvgRT,overallMedianRT,overallRTV,
+            overallMeanRRT,totalValidAttempts:totalValid,totalLapses,totalNoResponses:totalNoResp,
+            totalFalseStarts:totalFS,temporalDriftIdx:tdi,allRTs};
         sessionStorage.setItem('currentUser',JSON.stringify(currentUser));
         let users=JSON.parse(localStorage.getItem('users'))||[];
         const idx=users.findIndex(u=>u.id===currentUser.id);

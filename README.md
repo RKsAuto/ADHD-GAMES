@@ -52,6 +52,16 @@ The export and participant endpoints accept `?session=<sessionId>` to scope them
 
 Set an `EXPORT_KEY` environment variable on the server to lock the all-participant endpoints (they then require `?key=<EXPORT_KEY>`). **Strongly recommended for class sessions** — without it, anyone with the link can download everyone's data.
 
+## PVT protocol notes
+
+Follows the standard Dinges & Powell PVT: stimulus at random **2–10 s** intervals, response window of **10 s**, responses under 100 ms counted as false starts. Outcome measures per the literature:
+
+- **Mean RRT** (`pvt_meanRRT`) — mean reciprocal reaction time in responses/second, computed as the mean of 1/RT (*not* the reciprocal of the mean, which is what de-weights the long right tail). Higher = better performance; e.g. 250 ms → 4.0.
+- **Lapses** (`pvt_lapses_gt500ms`) — responses slower than 500 ms.
+- **No responses** (`pvt_noResponses`) — no press within the 10 s window, reported separately from lapses.
+
+Per-round values are exported too (`pvt_b1_rrt`, `pvt_b1_lapses`, `pvt_b1_noResp`, …).
+
 ## Running a class session
 
 1. Deploy once: Render blueprint (`render.yaml`) with `MONGO_URI` (Atlas) and `EXPORT_KEY` set; add the `RENDER_URL` GitHub variable so the keep-alive workflow keeps the server warm.

@@ -71,7 +71,13 @@ Per-round values are exported too (`pvt_b1_rrt`, `pvt_b1_lapses`, `pvt_b1_noResp
 
 ## Keeping the server awake (free tier)
 
-Render's free tier spins the service down after ~15 minutes without traffic, making the next request slow (~30–60 s cold start). The `.github/workflows/keep-alive.yml` workflow pings `/api/status` every 10 minutes to prevent that, and its run history doubles as uptime monitoring — a red run means the server or database was unreachable.
+Render's free tier spins the service down after ~15 minutes without traffic, making the next request slow (~30–60 s cold start). Two independent mechanisms keep it up — they do different jobs, so keep both:
+
+**1. Built-in self-ping** (`server.py`). A background thread requests the app's own **public** URL (`/healthz`) every 10 minutes, which passes through Render's router and counts as real traffic. It uses `RENDER_EXTERNAL_URL`, which Render injects automatically — no configuration needed. Tune with `SELF_PING_MINUTES` (`0` disables it) or override the target with `SELF_PING_URL`. When neither URL is present (local runs) it disables itself and logs that it did.
+
+*It prevents sleep but cannot cure it: once the service is asleep the thread is asleep too, so something external must wake it.* That is the second mechanism's job.
+
+**2. GitHub Actions cron** (`.github/workflows/keep-alive.yml`). Pings `/api/status` every 10 minutes from outside, so it can wake a sleeping service, and its run history doubles as uptime monitoring — a red run means the server or database was unreachable.
 
 One-time setup after deploying:
 1. In the GitHub repo: **Settings → Secrets and variables → Actions → Variables** → add `RENDER_URL` = your deployed URL (e.g. `https://adhd-cognitive-games.onrender.com`).

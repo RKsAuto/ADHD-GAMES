@@ -4,6 +4,9 @@ from pymongo import MongoClient
 from pymongo.errors import ServerSelectionTimeoutError
 import os
 import json
+import threading
+import urllib.request
+import urllib.error
 from io import BytesIO
 from datetime import datetime, timezone
 from openpyxl import Workbook
@@ -182,6 +185,67 @@ def get_collection():
 def get_sessions_collection():
     db = get_db()
     return db['sessions'] if db is not None else None
+
+# ── Keep-awake self-ping ──────────────────────────────────────────
+# Render's free tier sleeps a service after ~15 minutes without inbound
+# traffic. This background thread requests the app's own PUBLIC url on a
+# timer, which goes through Render's router and therefore counts as real
+# traffic (a request to localhost would not).
+#
+# It prevents sleep; it cannot cure it — once a service is asleep this
+# thread is asleep too, so the external GitHub Actions cron stays in place
+# to wake it. The two are complementary, not redundant.
+
+def self_ping_url():
+    """Explicit override, else the public url Render injects automatically."""
+    url = (os.environ.get('SELF_PING_URL')
+           or os.environ.get('RENDER_EXTERNAL_URL', '')).strip().rstrip('/')
+    return url or None
+
+
+def _self_ping_loop(url, interval_s):
+    endpoint = url + '/healthz'
+    while True:
+        try:
+            with urllib.request.urlopen(endpoint, timeout=30) as r:
+                r.read(64)
+        except Exception as e:                      # never let the thread die
+            print(f'[KEEPALIVE] ping failed: {e}')
+        threading.Event().wait(interval_s)
+
+
+def start_self_ping():
+    """
+    Started at import time so it runs under gunicorn too (code in the
+    __main__ block never executes there).
+    """
+    url = self_ping_url()
+    if not url:
+        print('[KEEPALIVE] no public url (SELF_PING_URL / RENDER_EXTERNAL_URL) — self-ping disabled')
+        return None
+    try:
+        minutes = float(os.environ.get('SELF_PING_MINUTES', '10'))
+    except ValueError:
+        minutes = 10.0
+    if minutes <= 0:
+        print('[KEEPALIVE] disabled via SELF_PING_MINUTES=0')
+        return None
+    interval_s = minutes * 60
+    t = threading.Thread(target=_self_ping_loop, args=(url, interval_s), daemon=True)
+    t.start()
+    print(f'[KEEPALIVE] self-ping every {minutes:g} min -> {url}/healthz')
+    return t
+
+
+@app.route('/healthz', methods=['GET'])
+def healthz():
+    """
+    Deliberately trivial: no database call, so the keep-awake ping stays
+    cheap and still succeeds while MongoDB is briefly unreachable. Use
+    /api/status for a real health check.
+    """
+    return jsonify({'ok': True, 'ts': datetime.now(timezone.utc).isoformat()}), 200
+
 
 # ── Static file serving (Flask serves the whole frontend) ─────────
 @app.route('/')
@@ -657,6 +721,17 @@ def api_participants():
         return jsonify({'count': len(out), 'warning': warning, 'participants': out}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# Start at import time so it also runs under gunicorn, where nothing in the
+# __main__ block below ever executes. Under the Flask dev reloader this module
+# is loaded in both the supervisor and the child; skip the supervisor so a
+# local run does not ping twice (gunicorn imports us as 'server', not
+# '__main__', so it is unaffected).
+_DEV_RELOADER_PARENT = (__name__ == '__main__'
+                        and os.environ.get('WERKZEUG_RUN_MAIN') != 'true')
+if not _DEV_RELOADER_PARENT:
+    start_self_ping()
 
 
 # ── Entry point ───────────────────────────────────────────────────

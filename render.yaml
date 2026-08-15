@@ -9,5 +9,10 @@ services:
         sync: false
       - key: EXPORT_KEY
         sync: false
+      # Minutes between keep-awake self-pings (Render sleeps free services
+      # after ~15 min idle). RENDER_EXTERNAL_URL is injected automatically;
+      # set SELF_PING_MINUTES=0 to switch the self-ping off.
+      - key: SELF_PING_MINUTES
+        value: "10"
       - key: PYTHON_VERSION
         value: 3.11.0

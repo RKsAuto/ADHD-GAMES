@@ -24,10 +24,14 @@ BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 MONGO_URI = os.environ.get('MONGO_URI', '')
 
 # When MONGO_URI is not set (local runs / demos), participants are stored in
-# this JSON file instead. Do NOT rely on it in cloud deployments — hosts like
-# Render wipe the local disk on every restart/redeploy.
-LOCAL_DATA_FILE     = os.path.join(BASE_DIR, 'local_data.json')
-LOCAL_SESSIONS_FILE = os.path.join(BASE_DIR, 'local_sessions.json')
+# these JSON files instead. Do NOT rely on them in cloud deployments — hosts
+# like Render wipe the local disk on every restart/redeploy.
+#
+# LOCAL_DATA_DIR relocates them, which serverless platforms need: on Vercel
+# the app directory is read-only and only /tmp is writable.
+LOCAL_DATA_DIR      = os.environ.get('LOCAL_DATA_DIR', '').strip() or BASE_DIR
+LOCAL_DATA_FILE     = os.path.join(LOCAL_DATA_DIR, 'local_data.json')
+LOCAL_SESSIONS_FILE = os.path.join(LOCAL_DATA_DIR, 'local_sessions.json')
 
 
 @contextmanager

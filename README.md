@@ -76,6 +76,29 @@ Follows the standard Dinges & Powell PVT: stimulus at random **2–10 s** interv
 
 Per-round values are exported too (`pvt_b1_rrt`, `pvt_b1_lapses`, `pvt_b1_noResp`, …).
 
+## Free hosted alternative: Vercel
+
+Vercel runs the app as a serverless function. That structurally avoids the failure that suspends the other free tiers: there is no long-running instance accumulating compute hours, so there is no hour or CPU quota to exceed — and no idle sleep, so no cold-start penalty for participants.
+
+```bash
+npm i -g vercel
+vercel        # first deploy, answer the prompts
+vercel --prod # promote it
+```
+
+Or import the GitHub repo at [vercel.com/new](https://vercel.com/new) — `vercel.json` and `api/index.py` are already in the repo, so no build configuration is needed.
+
+Then add **Environment Variables** in the project settings (Production scope): `MONGO_URI` and `EXPORT_KEY`, and redeploy so they take effect.
+
+> **`MONGO_URI` is mandatory on Vercel.** The app directory is read-only and only `/tmp` is writable, and `/tmp` does not survive between invocations — so MongoDB is the only store. The entry point points `LOCAL_DATA_DIR` at `/tmp` and turns the self-ping off automatically. Free Hobby projects are for non-commercial use, which covers academic research.
+
+Share the deployment URL the same way as any other host:
+
+```
+https://<project>.vercel.app/test_list.html    ← participants
+https://<project>.vercel.app/admin.html        ← experimenter
+```
+
 ## Free hosted alternative: Hugging Face Spaces
 
 A `Dockerfile` is included, so any Docker-based host can run this. Hugging Face Spaces is the practical free one — no credit card, no monthly hour limit.

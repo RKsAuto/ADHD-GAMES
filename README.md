@@ -62,6 +62,25 @@ Follows the standard Dinges & Powell PVT: stimulus at random **2–10 s** interv
 
 Per-round values are exported too (`pvt_b1_rrt`, `pvt_b1_lapses`, `pvt_b1_noResp`, …).
 
+## Free hosted alternative: Hugging Face Spaces
+
+A `Dockerfile` is included, so any Docker-based host can run this. Hugging Face Spaces is the practical free one — no credit card, no monthly hour limit.
+
+> **Note:** free-tier limits on Render are enforced per *account*, not per service or repository, so re-deploying the same code from a differently-named repo into the same account does not reset them.
+
+1. Create a **Space** → SDK **Docker** → blank template.
+2. Push this code to the Space's git remote. Its `README.md` must start with Space frontmatter:
+   ```yaml
+   ---
+   title: ADHD Cognitive Games
+   sdk: docker
+   app_port: 7860
+   ---
+   ```
+3. In **Settings → Variables and secrets**, add `MONGO_URI` and `EXPORT_KEY` as **secrets** (not variables) so they stay out of the public repo.
+
+**`MONGO_URI` is mandatory here.** As on Render, the container's filesystem is ephemeral — a restart wipes `local_data.json`, so MongoDB is the only durable store. Free Spaces also sleep after ~48 h idle and wake on the next request (~30 s), and the repo is public unless you make the Space private.
+
 ## Self-hosting on a Raspberry Pi (recommended long term)
 
 The app is light — the games run in the browser and the server only serves static files and writes small records — so any Pi handles it comfortably. Self-hosting removes the free-tier hour limit and suspension risk entirely.

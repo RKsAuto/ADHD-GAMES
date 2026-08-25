@@ -1,12 +1,15 @@
 name: Keep server awake
 
-# Pings the deployed Render service so the free tier never spins down,
-# and fails visibly if the server or its database connection is down.
+# Pings the deployed Render service so the free tier never spins down, and
+# fails visibly when something is wrong — reporting WHICH layer broke:
+#   * /healthz  — served without touching the database. If this fails, the
+#     service itself is down (crashed, suspended, failed deploy, or Render
+#     returning its own 5xx).
+#   * /api/status — verifies MongoDB. If /healthz passes but this returns
+#     503, the app is fine and the database is unreachable.
 #
-# Setup (one time): in the GitHub repo go to
-#   Settings -> Secrets and variables -> Actions -> Variables
-# and add a repository variable named RENDER_URL with your deployed URL,
-# e.g. https://adhd-cognitive-games.onrender.com
+# Optional: set a RENDER_URL repository variable (Settings -> Secrets and
+# variables -> Actions -> Variables) to override the default URL below.
 
 on:
   schedule:
@@ -17,12 +20,48 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping /api/status
+      - name: Ping and diagnose
         env:
-          # Deployed URL; a RENDER_URL repository variable overrides it if set
           RENDER_URL: ${{ vars.RENDER_URL || 'https://adhd-games.onrender.com' }}
         run: |
-          # --max-time 90 tolerates a cold start; --retry covers transient blips
-          curl -fsS --max-time 90 --retry 3 --retry-delay 10 "$RENDER_URL/api/status"
-          echo
+          set -uo pipefail
+
+          # --max-time 90 tolerates a free-tier cold start; retries cover blips.
+          # Capture body and status separately so failures are self-explaining.
+          probe() {
+            # Truncate first: on a connection failure curl writes nothing and a
+            # stale body from the previous probe would be reported as this one's
+            : > /tmp/body.txt
+            : > /tmp/err.txt
+            curl -sS --max-time 90 --retry 3 --retry-delay 10 \
+                 -o /tmp/body.txt -w '%{http_code} %{time_total}' "$1" 2>/tmp/err.txt
+          }
+
+          echo "== Keep-awake ping: $RENDER_URL/healthz =="
+          read -r HEALTH_CODE HEALTH_TIME <<< "$(probe "$RENDER_URL/healthz")" || true
+          echo "HTTP $HEALTH_CODE in ${HEALTH_TIME}s"
+          head -c 400 /tmp/body.txt; echo
+
+          if [ "${HEALTH_CODE:-000}" != "200" ]; then
+            echo "::error::SERVICE DOWN — $RENDER_URL/healthz returned ${HEALTH_CODE:-no response}."
+            echo "This endpoint does not touch the database, so the app itself is not serving."
+            echo "A fast 5xx usually means Render is answering, not your app: check the Render"
+            echo "dashboard for a suspended service, a failed deploy, or a crash loop in Logs."
+            [ -s /tmp/err.txt ] && { echo "curl said:"; cat /tmp/err.txt; }
+            exit 1
+          fi
+          echo "Server is awake."
+
+          echo "== Database check: $RENDER_URL/api/status =="
+          read -r DB_CODE DB_TIME <<< "$(probe "$RENDER_URL/api/status")" || true
+          echo "HTTP $DB_CODE in ${DB_TIME}s"
+          head -c 400 /tmp/body.txt; echo
+
+          if [ "${DB_CODE:-000}" != "200" ]; then
+            echo "::error::DATABASE UNREACHABLE — the server is up (/healthz OK) but"
+            echo "/api/status returned ${DB_CODE:-no response}. Participant saves are failing."
+            echo "Check MongoDB Atlas: cluster paused, IP access list entry removed or expired,"
+            echo "or rotated credentials in MONGO_URI."
+            exit 1
+          fi
           echo "Server is awake and database is connected."

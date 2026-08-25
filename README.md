@@ -73,11 +73,15 @@ Per-round values are exported too (`pvt_b1_rrt`, `pvt_b1_lapses`, `pvt_b1_noResp
 
 Render's free tier spins the service down after ~15 minutes without traffic, making the next request slow (~30–60 s cold start). Two independent mechanisms keep it up — they do different jobs, so keep both:
 
-**1. Built-in self-ping** (`server.py`). A background thread requests the app's own **public** URL (`/healthz`) every 10 minutes, which passes through Render's router and counts as real traffic. It uses `RENDER_EXTERNAL_URL`, which Render injects automatically — no configuration needed. Tune with `SELF_PING_MINUTES` (`0` disables it) or override the target with `SELF_PING_URL`. When neither URL is present (local runs) it disables itself and logs that it did.
+> ⚠️ **Budget first.** A free plan allows **750 instance-hours per month**, shared across every free service in the account. Keeping one service awake around the clock costs ~744 of them, leaving no margin — exceeding the allowance gets the service **suspended** (it then returns Render's own fast `503 Service Suspended` page). Both mechanisms below therefore run only during a daily window (default `03:00–16:59 UTC` = `08:30–22:29 IST`, about 400 h/month). Widen them only on a paid plan.
+
+**1. Built-in self-ping** (`server.py`). A background thread requests the app's own **public** URL (`/healthz`) every 10 minutes, which passes through Render's router and counts as real traffic. It uses `RENDER_EXTERNAL_URL`, which Render injects automatically — no configuration needed. Tune with `SELF_PING_MINUTES` (`0` disables it), restrict the hours with `SELF_PING_WINDOW_UTC` (`START-END`, e.g. `03-16`; empty means 24/7), or override the target with `SELF_PING_URL`. When neither URL is present (local runs) it disables itself and logs that it did.
 
 *It prevents sleep but cannot cure it: once the service is asleep the thread is asleep too, so something external must wake it.* That is the second mechanism's job.
 
-**2. GitHub Actions cron** (`.github/workflows/keep-alive.yml`). Pings `/api/status` every 10 minutes from outside, so it can wake a sleeping service, and its run history doubles as uptime monitoring — a red run means the server or database was unreachable.
+**2. GitHub Actions cron** (`.github/workflows/keep-alive.yml`). Pings from outside every 10 minutes within the same window, so it can wake a sleeping service, and its run history doubles as uptime monitoring. It probes `/healthz` first and `/api/status` second, so a failure tells you *which* layer broke: a `/healthz` failure means the service itself is not serving (crashed, failed deploy, or suspended), while `/healthz` OK plus `/api/status` 503 means the database is unreachable. Response time is a clue too — this app's own database-down 503 takes ~5 s, so a *fast* 5xx is Render answering rather than the app.
+
+**On session day**, if you want zero cold starts outside the window, either temporarily clear `SELF_PING_WINDOW_UTC` / widen the cron, or move the service to a paid instance for that month. Watch the hours on Render's usage page either way.
 
 One-time setup after deploying:
 1. In the GitHub repo: **Settings → Secrets and variables → Actions → Variables** → add `RENDER_URL` = your deployed URL (e.g. `https://adhd-cognitive-games.onrender.com`).

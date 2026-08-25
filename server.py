@@ -203,14 +203,36 @@ def self_ping_url():
     return url or None
 
 
+def in_ping_window(now=None):
+    """
+    Keeping a free service awake around the clock costs ~744 instance-hours a
+    month against a 750-hour allowance, which is what gets services suspended.
+    SELF_PING_WINDOW_UTC ('START-END', 24h UTC, e.g. '03-16') keeps it warm
+    only when people actually use it and lets it sleep otherwise. Empty means
+    always on.
+    """
+    window = os.environ.get('SELF_PING_WINDOW_UTC', '').strip()
+    if not window:
+        return True
+    try:
+        start_s, end_s = window.split('-', 1)
+        start, end = int(start_s), int(end_s)
+    except ValueError:
+        print(f'[KEEPALIVE] bad SELF_PING_WINDOW_UTC {window!r} — ignoring')
+        return True
+    hour = (now or datetime.now(timezone.utc)).hour
+    return start <= hour < end if start <= end else (hour >= start or hour < end)
+
+
 def _self_ping_loop(url, interval_s):
     endpoint = url + '/healthz'
     while True:
-        try:
-            with urllib.request.urlopen(endpoint, timeout=30) as r:
-                r.read(64)
-        except Exception as e:                      # never let the thread die
-            print(f'[KEEPALIVE] ping failed: {e}')
+        if in_ping_window():
+            try:
+                with urllib.request.urlopen(endpoint, timeout=30) as r:
+                    r.read(64)
+            except Exception as e:                  # never let the thread die
+                print(f'[KEEPALIVE] ping failed: {e}')
         threading.Event().wait(interval_s)
 
 
@@ -233,7 +255,12 @@ def start_self_ping():
     interval_s = minutes * 60
     t = threading.Thread(target=_self_ping_loop, args=(url, interval_s), daemon=True)
     t.start()
-    print(f'[KEEPALIVE] self-ping every {minutes:g} min -> {url}/healthz')
+    window = os.environ.get('SELF_PING_WINDOW_UTC', '').strip()
+    when = f'during {window}:00 UTC' if window else 'around the clock'
+    print(f'[KEEPALIVE] self-ping every {minutes:g} min {when} -> {url}/healthz')
+    if not window:
+        print('[KEEPALIVE] note: 24/7 pinging uses ~744 of a free plan\'s 750 monthly '
+              'instance-hours. Set SELF_PING_WINDOW_UTC (e.g. 03-16) to leave headroom.')
     return t
 
 

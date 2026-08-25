@@ -14,5 +14,10 @@ services:
       # set SELF_PING_MINUTES=0 to switch the self-ping off.
       - key: SELF_PING_MINUTES
         value: "10"
+      # Only keep the service warm during these UTC hours. 24/7 pinging uses
+      # ~744 of a free plan's 750 monthly instance-hours, which leads to
+      # suspension; 03-16 UTC is 08:30-22:29 IST. Clear it on a paid plan.
+      - key: SELF_PING_WINDOW_UTC
+        value: "03-16"
       - key: PYTHON_VERSION
         value: 3.11.0

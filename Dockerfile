@@ -19,4 +19,7 @@ ENV PORT=7860 \
     SELF_PING_MINUTES=0
 EXPOSE 7860
 
-CMD ["sh", "-c", "exec gunicorn --workers 2 --bind 0.0.0.0:${PORT} server:app"]
+# 4 workers so a whole class registering at once is served in parallel; the
+# work per request is tiny (static files and small JSON writes), and the
+# cross-process file lock keeps concurrent saves safe.
+CMD ["sh", "-c", "exec gunicorn --workers 4 --timeout 60 --bind 0.0.0.0:${PORT} server:app"]

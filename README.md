@@ -1,3 +1,17 @@
+---
+title: ADHD Cognitive Games
+emoji: 🧠
+colorFrom: indigo
+colorTo: blue
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
+<!-- The block above is Hugging Face Spaces configuration; it makes a Space
+     build the Dockerfile and serve the app. GitHub renders it as a table and
+     it is otherwise harmless — leave it in place if you deploy to Spaces. -->
+
 # ADHD-Cognitive-Games
 I have developed some cognitive games based on research papers that measure different behavioural traits related to ADHD. The games are developed to collect data for training a classification model for characterising the ADHD traits in young adults.
 
@@ -80,6 +94,21 @@ A `Dockerfile` is included, so any Docker-based host can run this. Hugging Face 
 3. In **Settings → Variables and secrets**, add `MONGO_URI` and `EXPORT_KEY` as **secrets** (not variables) so they stay out of the public repo.
 
 **`MONGO_URI` is mandatory here.** As on Render, the container's filesystem is ephemeral — a restart wipes `local_data.json`, so MongoDB is the only durable store. Free Spaces also sleep after ~48 h idle and wake on the next request (~30 s), and the repo is public unless you make the Space private.
+
+### Sharing the link with a whole class
+
+Share the **direct app URL**, not the `huggingface.co/spaces/...` page:
+
+```
+https://<your-username>-<space-name>.hf.space/test_list.html      ← participants
+https://<your-username>-<space-name>.hf.space/admin.html          ← you
+```
+
+The `huggingface.co/spaces/...` page wraps the app in an iframe, which adds Hugging Face chrome and — more importantly — **swallows keyboard input until the participant clicks inside the frame**. These tests are driven by Space / F / J, so send the direct `.hf.space` link.
+
+Everyone uses the same link at the same time; each browser keeps its own participant session, so there is no cross-contamination. A simulated class of 40 participants arriving simultaneously — loading pages, saving results and downloading their own sheets — completed in well under a second of server time, so the server is not the constraint.
+
+Before a session: the Space must be **public** (otherwise participants need a Hugging Face account), and open the link yourself a few minutes early to wake it if it has been idle.
 
 ## Self-hosting on a Raspberry Pi (recommended long term)
 

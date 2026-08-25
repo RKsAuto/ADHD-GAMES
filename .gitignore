@@ -13,3 +13,6 @@ local_sessions.json
 session_server.log
 session_tunnel.log
 cloudflared
+
+# credentials written by deploy/pi-setup.sh — never commit
+deploy/adhd-games.env

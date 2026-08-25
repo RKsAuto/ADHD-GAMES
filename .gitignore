@@ -6,6 +6,8 @@ venv/
 # local participant data (created when running without MONGO_URI)
 local_data.json
 local_sessions.json
+*.lock
+*.tmp
 
 # session runner artifacts
 session_server.log

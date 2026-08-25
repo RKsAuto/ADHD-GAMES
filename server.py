@@ -7,7 +7,12 @@ import json
 import threading
 import urllib.request
 import urllib.error
+from contextlib import contextmanager
 from io import BytesIO
+try:
+    import fcntl                      # POSIX only; absent on Windows
+except ImportError:
+    fcntl = None
 from datetime import datetime, timezone
 from openpyxl import Workbook
 
@@ -25,6 +30,24 @@ LOCAL_DATA_FILE     = os.path.join(BASE_DIR, 'local_data.json')
 LOCAL_SESSIONS_FILE = os.path.join(BASE_DIR, 'local_sessions.json')
 
 
+@contextmanager
+def file_lock(path):
+    """
+    Cross-process lock so concurrent gunicorn workers cannot interleave a
+    read-modify-write of the JSON stores and lose a record. No-op where
+    fcntl is unavailable (Windows).
+    """
+    if fcntl is None:
+        yield
+        return
+    with open(path + '.lock', 'w') as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lf, fcntl.LOCK_UN)
+
+
 def _load_json_list(path):
     if not os.path.exists(path):
         return []
@@ -34,6 +57,24 @@ def _load_json_list(path):
             return data if isinstance(data, list) else []
     except (OSError, ValueError):
         return []
+
+
+def _write_json_list(path, data):
+    """
+    Atomic write: a power cut (a real risk on a Raspberry Pi) can otherwise
+    leave a half-written file, losing every record in it. Write a temp file,
+    fsync, then rename — the rename is atomic, so readers see either the old
+    file or the complete new one.
+    """
+    # Per-process temp name: two workers writing a shared one can race and
+    # make os.replace fail (the lock normally prevents that, but this keeps
+    # the write safe on its own).
+    tmp = f'{path}.{os.getpid()}.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=1)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
 
 
 def load_local_docs():
@@ -71,10 +112,10 @@ def create_session(label=''):
         'createdAt': now.isoformat(),
     }
     try:
-        sessions = _load_json_list(LOCAL_SESSIONS_FILE)
-        sessions.append(session)
-        with open(LOCAL_SESSIONS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(sessions, f, indent=1)
+        with file_lock(LOCAL_SESSIONS_FILE):
+            sessions = _load_json_list(LOCAL_SESSIONS_FILE)
+            sessions.append(session)
+            _write_json_list(LOCAL_SESSIONS_FILE, sessions)
     except OSError as e:
         print(f'[LOCAL] session write failed: {e}')
 
@@ -114,10 +155,10 @@ def store_document(document):
 
     local_ok = False
     try:
-        docs = [d for d in load_local_docs() if d.get('userId') != document['userId']]
-        docs.append(document)
-        with open(LOCAL_DATA_FILE, 'w', encoding='utf-8') as f:
-            json.dump(docs, f, indent=1)
+        with file_lock(LOCAL_DATA_FILE):
+            docs = [d for d in load_local_docs() if d.get('userId') != document['userId']]
+            docs.append(document)
+            _write_json_list(LOCAL_DATA_FILE, docs)
         local_ok = True
     except OSError as e:
         print(f'[LOCAL] write failed: {e}')

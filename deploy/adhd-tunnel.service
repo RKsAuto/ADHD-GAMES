@@ -1,0 +1,19 @@
+[Unit]
+Description=Cloudflare tunnel for ADHD Cognitive Games
+After=network-online.target adhd-games.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+EnvironmentFile=-__APPDIR__/deploy/adhd-games.env
+# With CF_TUNNEL_TOKEN set (named tunnel, stable hostname) the token is used;
+# otherwise a quick tunnel is opened and its random URL appears in the journal:
+#   __APPDIR__/deploy/tunnel-url.sh
+ExecStart=/bin/sh -c 'if [ -n "$CF_TUNNEL_TOKEN" ]; then exec __CFBIN__ tunnel run --token "$CF_TUNNEL_TOKEN"; else exec __CFBIN__ tunnel --url http://127.0.0.1:__PORT__; fi'
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target

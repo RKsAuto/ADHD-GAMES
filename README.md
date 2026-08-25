@@ -62,6 +62,35 @@ Follows the standard Dinges & Powell PVT: stimulus at random **2–10 s** interv
 
 Per-round values are exported too (`pvt_b1_rrt`, `pvt_b1_lapses`, `pvt_b1_noResp`, …).
 
+## Self-hosting on a Raspberry Pi (recommended long term)
+
+The app is light — the games run in the browser and the server only serves static files and writes small records — so any Pi handles it comfortably. Self-hosting removes the free-tier hour limit and suspension risk entirely.
+
+```bash
+git clone <repo> && cd ADHD-GAMES
+./deploy/pi-setup.sh          # asks for MONGO_URI, EXPORT_KEY, optional tunnel token
+```
+
+That installs a virtualenv and enables two systemd services that start on boot and restart after crashes or power cuts:
+
+| Service | Role |
+|---|---|
+| `adhd-games` | gunicorn bound to `127.0.0.1` — never exposed directly |
+| `adhd-tunnel` | `cloudflared`, publishing it to the internet over HTTPS |
+
+The tunnel needs **no port forwarding, no static IP and no router changes**, and works behind CGNAT. Only this app is published — not the rest of your network, and not SSH.
+
+```bash
+./deploy/tunnel-url.sh                       # current public links
+sudo systemctl status adhd-games adhd-tunnel # health
+sudo journalctl -u adhd-games -f             # logs
+git pull && sudo systemctl restart adhd-games # update
+```
+
+**Getting a stable URL.** Without a tunnel token you get a free *quick tunnel* whose `*.trycloudflare.com` address changes on every restart — fine for a one-off session, awkward for a permanent link. For a fixed address, either create a named tunnel in the Cloudflare Zero Trust dashboard (needs a domain on Cloudflare) and put its token in `CF_TUNNEL_TOKEN`, or use [Tailscale Funnel](https://tailscale.com/kb/1223/funnel), which gives a permanent `https://<machine>.<tailnet>.ts.net` URL free without owning a domain.
+
+**Before relying on it for a session:** the Pi's power and internet become your uptime. Check that the links work from a phone on mobile data (not just your home WiFi), and reboot the Pi once to confirm both services come back on their own.
+
 ## Running a session without hosting (laptop + public tunnel)
 
 If the hosted service is unavailable — e.g. Render's free plan suspends it with *"Free Tier Usage Exceeded"* until the next billing period — you can run the whole session from one machine and still give participants a public link:

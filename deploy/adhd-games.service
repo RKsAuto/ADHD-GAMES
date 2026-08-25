@@ -1,0 +1,18 @@
+[Unit]
+Description=ADHD Cognitive Games (Flask/gunicorn)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__APPDIR__
+EnvironmentFile=__APPDIR__/deploy/adhd-games.env
+ExecStart=__APPDIR__/venv/bin/gunicorn --workers 2 --bind 127.0.0.1:__PORT__ server:app
+Restart=always
+RestartSec=5
+# Survive power cuts and transient failures without giving up
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target

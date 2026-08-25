@@ -62,6 +62,18 @@ Follows the standard Dinges & Powell PVT: stimulus at random **2–10 s** interv
 
 Per-round values are exported too (`pvt_b1_rrt`, `pvt_b1_lapses`, `pvt_b1_noResp`, …).
 
+## Running a session without hosting (laptop + public tunnel)
+
+If the hosted service is unavailable — e.g. Render's free plan suspends it with *"Free Tier Usage Exceeded"* until the next billing period — you can run the whole session from one machine and still give participants a public link:
+
+```bash
+export MONGO_URI="mongodb+srv://..."   # optional; also saves to Atlas
+export EXPORT_KEY="yourkey"            # protects the admin dashboard
+./run_session.sh
+```
+
+It installs dependencies, starts the server, opens a free Cloudflare tunnel (no account needed) and prints the two links to share — `.../test_list.html` for participants and `.../admin.html` for you. Data is written to `local_data.json` on the laptop, and to MongoDB as well when `MONGO_URI` is set. Keep the terminal open for the whole session; Ctrl-C ends it. The URL changes each run, so share it at the start of the session.
+
 ## Running a class session
 
 1. Deploy once: Render blueprint (`render.yaml`) with `MONGO_URI` (Atlas) and `EXPORT_KEY` set; add the `RENDER_URL` GitHub variable so the keep-alive workflow keeps the server warm.
